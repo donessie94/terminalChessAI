@@ -9,6 +9,7 @@ int main() {
     // Initial drawing of the board.
     board.draw(game.getState());
     board.drawInfo(game.getMoveHistory());
+    board.drawUndoButton();
     refresh();
 
     MEVENT event;
@@ -43,8 +44,18 @@ int main() {
                         // Redraw board to show the new state.
                         board.draw(game.getState());
                         board.drawInfo(game.getMoveHistory());
+                        board.drawUndoButton();
                         refresh();
                     }
+                }
+                else if(board.clickUndoButton(event.x, event.y))
+                {
+                    clear();
+                    game.undoMove();
+                    board.draw(game.getState());
+                    board.drawInfo(game.getMoveHistory());
+                    board.drawUndoButton();
+                    refresh();
                 }
             }
         }

@@ -32,11 +32,14 @@ BOARD::BOARD() {
     if (can_change_color()) {
         init_color(1, 380, 300, 200);
         init_color(2, 300, 100, 100);
+        init_color(3, 800, 800, 800);
         init_pair(1, COLOR_WHITE, 1);
         init_pair(2, COLOR_YELLOW, 1);
         init_pair(3, COLOR_WHITE, 2);
         init_pair(4, COLOR_YELLOW, 2);
         init_pair(5, COLOR_GREEN, COLOR_BLACK);
+        // Set up a new color pair (pair 6) for the UNDO button.
+        init_pair(6, COLOR_RED, 3);
     } else {
         init_pair(1, COLOR_WHITE, COLOR_MAGENTA);
         init_pair(2, COLOR_YELLOW, COLOR_MAGENTA);
@@ -120,6 +123,25 @@ void BOARD::drawPieceAt(int startRow, int startCol, const std::vector<std::strin
     attroff(COLOR_PAIR(colorPair));
 }
 
+void BOARD::drawUndoButton() {
+    PIECES piece;
+    std::vector<std::string> undoButton = piece.undoButton;
+
+    // Determine where to draw the button.
+    // For instance, at the bottom right: starting row = heigth - buttonHeight,
+    // and starting column = width + 1 (to the right of the board).
+    int buttonHeight = undoButton.size();
+    int startRow = heigth - buttonHeight;
+    int startCol = width + 1;
+
+    // Draw each line of the UNDO button using color pair 6.
+    attron(COLOR_PAIR(6));
+    for (size_t i = 0; i < undoButton.size(); i++) {
+        mvprintw(startRow + i, startCol, "%s", undoButton[i].c_str());
+    }
+    attroff(COLOR_PAIR(6));
+}
+
 // In BOARD::drawInfo(), we print the move history to the right of the board.
 // Each move is formatted in standard chess notation (e.g. "1. N e2xe4").
 // It uses the full MoveInfo structure (which contains lastMove, movedPiece, and capturedPiece).
@@ -151,6 +173,30 @@ short BOARD::getClickedPieceIndex(const std::vector<short>& state, short colNum,
     colNum = colNum / 11;
     rowNum = rowNum / 6;
     return rowNum * 8 + colNum;
+}
+// Returns true if the click at (colNum, rowNum) is within the bounds of the UNDO button.
+// The UNDO button is drawn at the bottom right of the board:
+//   - Its top-left corner is at (width + 1, heigth - buttonHeight)
+//   - Its dimensions are determined by the size of pieces.undoButton.
+bool BOARD::clickUndoButton(short colNum, short rowNum) {
+    // Create a temporary PIECES instance to access the undo button art.
+    PIECES pieces;
+    std::vector<std::string> undoButton = pieces.undoButton;
+
+    // Determine the dimensions of the button.
+    int buttonHeight = undoButton.size();
+    int buttonWidth = undoButton[0].size(); // Assuming all lines have equal length.
+
+    // Calculate the top-left coordinates of the button:
+    int startRow = heigth - buttonHeight;
+    int startCol = width + 1;
+
+    // Check if the click falls within the button's bounding box.
+    if (colNum >= startCol && colNum < startCol + buttonWidth &&
+        rowNum >= startRow && rowNum < startRow + buttonHeight) {
+        return true;
+    }
+    return false;
 }
 void BOARD::highlight(const std::vector<short>& state, short index) {
     short key = std::abs(state[index]);

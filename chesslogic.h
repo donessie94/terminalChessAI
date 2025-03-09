@@ -54,6 +54,7 @@ private:
     bool playerMovingEmptySquare(short sourceIndex);
     bool playerCaptureOwnPiece(short sourceIndex, short destIndex);
     bool isMovePrelimValid(std::pair<short, short> moveIndex);
+    bool checkAfterMove(std::pair<short, short> candidateMove);
 
     // --- Undo Helper: Save current state and king positions, and moved/captured pieces ---
     void saveLastMove(std::pair<short, short> moveIndex);
@@ -72,6 +73,13 @@ private:
     void moveBishop(std::pair<short, short> moveIndex);
     void moveQueen(std::pair<short, short> moveIndex);
     void moveKing(std::pair<short, short> moveIndex);
+
+    // ---------------- Raw Move Generation Helpers ----------------
+
+    // Generates knight moves as {source, destination} pairs.
+    std::vector<std::pair<short, short>> generateKnightMoves(short index, const std::vector<short>& state);
+    std::vector<std::pair<short, short>> generateSlidingMoves(short index, const std::vector<short>& state, const std::vector<short>& deltas);
+    std::vector<std::pair<short, short>> generateMovesForPiece(short index, const std::vector<short>& state);
 };
 
 #endif // CHESSLOGIC_H

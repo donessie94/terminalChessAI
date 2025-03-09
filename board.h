@@ -27,11 +27,13 @@ struct BOARD {
     void draw(const std::vector<short>& state);
     void drawPieceAt(int startRow, int startCol, const std::vector<std::string>& art, int colorPair);
     void drawInfo(const std::vector<MoveInfo>& history);
+    void drawUndoButton();
 
     // Input helpers.
     bool clickInside(short colNum, short rowNum);
     short getClickedPieceIndex(const std::vector<short>& state, short colNum, short rowNum);
     void highlight(const std::vector<short>& state, short index);
+    bool clickUndoButton(short colNum, short rowNum);
 
     // Color helper.
     short chooseColorPair(short pieceValue, bool isLightSquare);

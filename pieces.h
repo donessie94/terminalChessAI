@@ -3,6 +3,14 @@
 
 struct PIECES
 {
+    // Define a simple UNDO button using ASCII characters.
+    // The design is 3 lines tall and about 15 columns wide.
+    std::vector<std::string> undoButton = {
+        "+             +",
+        "|  <- UNDO    |",
+        "+             +"
+    };
+
     // Rook design 6 lines × 11 columns.
     std::vector<std::string> rookArt = {
         "  _  _  _  ",
