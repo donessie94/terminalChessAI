@@ -32,10 +32,9 @@ public:
     // Returns the history of moves (each move stored as a MoveInfo record).
     std::vector<MoveInfo> getMoveHistory() const;
 
-    // ------------------ Checkmate Functionality ------------------
-    // Generates all valid moves for the current turn (using fully validated moves, not raw moves)
-    // and updates the checkMateFlag. If there are no valid moves, the current player is in checkmate.
-    bool checkMate();
+    std::vector<std::pair<short, short>> generateAllValidMoves(const std::vector<short>& state);
+    bool checkAfterMove(const std::vector<short>& state, std::pair<short, short> candidateMove);
+    short getKingPositionInState(const std::vector<short>& state, bool isWhite);
     // Stores all valid moves for the current turn.
     std::vector<std::pair<short, short>> allValidMoves;
     // True if the current player is in checkmate.
@@ -90,8 +89,6 @@ private:
     bool playerMovingEmptySquare(short sourceIndex);
     bool playerCaptureOwnPiece(short sourceIndex, short destIndex);
     bool isMovePrelimValid(std::pair<short, short> moveIndex);
-    // Simulates a candidate move on a dummy state and returns true if it leaves the moving side's king in check.
-    bool checkAfterMove(std::pair<short, short> candidateMove);
 
     // ------------------ Undo / Execute Helpers ------------------
     // Saves the current game state, king positions, and move details into the undo stack.

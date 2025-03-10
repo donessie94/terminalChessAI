@@ -8,6 +8,8 @@
 #include <cstdlib>   // For std::abs
 #include <cmath>     // For std::abs and std::pow
 #include <iostream>
+#include <sstream>
+#include <limits>
 
 // Stub for check: In a full implementation, this would determine whether a move creates a check.
 // For now, it always returns false for demonstration.
@@ -169,13 +171,14 @@ void CHESSLOGIC::saveLastMove(std::pair<short, short> moveIndex) {
 }
 
 // Executes a validated move: saves state, updates the board, toggles turn,
-// and then calls checkMate() to update valid moves and the checkMateFlag.
+// and then updates valid moves and the checkmate flag using generateAllValidMoves().
 void CHESSLOGIC::executeMove(std::pair<short, short> moveIndex) {
     saveLastMove(moveIndex);
     gameState[moveIndex.second] = gameState[moveIndex.first];
     gameState[moveIndex.first] = 0;
     changeTurn();
-    checkMate();  // Update valid moves for the new turn and set checkMateFlag.
+    allValidMoves = generateAllValidMoves(gameState);
+    checkMateFlag = allValidMoves.empty();
 }
 
 // ---------------- King Helpers ----------------
@@ -241,12 +244,11 @@ void CHESSLOGIC::movePawn(std::pair<short, short> moveIndex) {
             candidates.push_back(capRight);
     }
 
-    // Check normal candidate moves.
+    // Check if any normal candidate move matches the target.
     for (short cand : candidates) {
         if (cand == target) {
-            if (checkAfterMove({source, target})) {
-                // Debug message commented out.
-                // std::cout << "Invalid move: Pawn move leaves king in check.\n";
+            if (checkAfterMove(gameState, {source, target})) {
+                // Move leaves king in check; do nothing.
             } else {
                 executeMove({source, target});
                 // Promotion: For white, if pawn reaches row 0; for black, if pawn reaches row 7.
@@ -272,10 +274,7 @@ void CHESSLOGIC::movePawn(std::pair<short, short> moveIndex) {
                         std::abs(getCol(lastInfo.lastMove.second) - getCol(source)) == 1) {
                         // En passant valid: remove enemy pawn.
                         gameState[lastInfo.lastMove.second] = 0;
-                        if (checkAfterMove({source, target})) {
-                            // Debug message commented out.
-                            // std::cout << "Invalid move: En passant leaves king in check.\n";
-                        } else {
+                        if (!checkAfterMove(gameState, {source, target})) {
                             executeMove({source, target});
                         }
                         return;
@@ -292,9 +291,7 @@ void CHESSLOGIC::movePawn(std::pair<short, short> moveIndex) {
                     if (lastSourceRow == 6 && lastTargetRow == 4 &&
                         std::abs(getCol(lastInfo.lastMove.second) - getCol(source)) == 1) {
                         gameState[lastInfo.lastMove.second] = 0;
-                        if (checkAfterMove({source, target})) {
-                            // std::cout << "Invalid move: En passant leaves king in check.\n";
-                        } else {
+                        if (!checkAfterMove(gameState, {source, target})) {
                             executeMove({source, target});
                         }
                         return;
@@ -303,9 +300,7 @@ void CHESSLOGIC::movePawn(std::pair<short, short> moveIndex) {
             }
         }
     }
-
     // If no candidate move is valid, do nothing.
-    // std::cout << "Pawn move not valid.\n";
 }
 
 // Knight move function.
@@ -330,9 +325,7 @@ void CHESSLOGIC::moveKnight(std::pair<short, short> moveIndex) {
         if (moveDiff == km.offset) {
             if ((col + km.dCol >= 0) && (col + km.dCol < 8) &&
                 (row + km.dRow >= 0) && (row + km.dRow < 8)) {
-                if (checkAfterMove(moveIndex)) {
-                    // std::cout << "Invalid move: Knight move leaves king in check.\n";
-                } else {
+                if (!checkAfterMove(gameState, moveIndex)) {
                     executeMove(moveIndex);
                 }
                 return;
@@ -348,9 +341,7 @@ void CHESSLOGIC::moveRook(std::pair<short, short> moveIndex) {
     const short directions[4] = { -8, +8, +1, -1 };
     for (int d = 0; d < 4; d++) {
         if (attemptSlideRook(moveIndex.first, moveIndex.second, directions[d])) {
-            if (checkAfterMove(moveIndex)) {
-                // std::cout << "Invalid move: Rook move leaves king in check.\n";
-            } else {
+            if (!checkAfterMove(gameState, moveIndex)) {
                 executeMove(moveIndex);
             }
             return;
@@ -365,9 +356,7 @@ void CHESSLOGIC::moveBishop(std::pair<short, short> moveIndex) {
     const short diagonalDeltas[4] = { -9, -7, +7, +9 };
     for (int d = 0; d < 4; d++) {
         if (attemptSlideDiagonal(moveIndex.first, moveIndex.second, diagonalDeltas[d])) {
-            if (checkAfterMove(moveIndex)) {
-                // std::cout << "Invalid move: Bishop move leaves king in check.\n";
-            } else {
+            if (!checkAfterMove(gameState, moveIndex)) {
                 executeMove(moveIndex);
             }
             return;
@@ -387,9 +376,7 @@ void CHESSLOGIC::moveQueen(std::pair<short, short> moveIndex) {
         else
             valid = attemptSlideDiagonal(moveIndex.first, moveIndex.second, allDeltas[d]);
         if (valid) {
-            if (checkAfterMove(moveIndex)) {
-                // std::cout << "Invalid move: Queen move leaves king in check.\n";
-            } else {
+            if (!checkAfterMove(gameState, moveIndex)) {
                 executeMove(moveIndex);
             }
             return;
@@ -417,7 +404,6 @@ void CHESSLOGIC::moveKing(std::pair<short, short> moveIndex) {
         // 1. Verify that the allied rook is still in its original position.
         if ((isWhite && gameState[rookIndex] != 5) ||
             (!isWhite && gameState[rookIndex] != -5)) {
-            // std::cout << "Castling disallowed: Rook has moved.\n";
             return;
         }
 
@@ -429,16 +415,13 @@ void CHESSLOGIC::moveKing(std::pair<short, short> moveIndex) {
             betweenSquares = kingside ? std::vector<short>{5, 6} : std::vector<short>{1, 2, 3};
         }
         for (short sq : betweenSquares) {
-            if (gameState[sq] != 0) {
-                // std::cout << "Castling disallowed: Path is blocked at square " << sq << ".\n";
+            if (gameState[sq] != 0)
                 return;
-            }
         }
 
         // 3. Verify that neither the king nor the involved rook has moved before.
         for (const auto &info : undoStack) {
             if (info.lastMove.first == moveIndex.first || info.lastMove.first == rookIndex) {
-                // std::cout << "Castling disallowed: King or rook has moved before.\n";
                 return;
             }
         }
@@ -446,18 +429,12 @@ void CHESSLOGIC::moveKing(std::pair<short, short> moveIndex) {
         // 4. Check that the king is not in check on its current square,
         // does not pass through check, and does not end in check.
         short passingSquare = isWhite ? (kingside ? 61 : 59) : (kingside ? 5 : 3);
-        if (checkAfterMove({moveIndex.first, moveIndex.first})) {
-            // std::cout << "Castling disallowed: King is currently in check.\n";
+        if (checkAfterMove(gameState, {moveIndex.first, moveIndex.first}))
             return;
-        }
-        if (checkAfterMove({moveIndex.first, passingSquare})) {
-            // std::cout << "Castling disallowed: King would pass through check.\n";
+        if (checkAfterMove(gameState, {moveIndex.first, passingSquare}))
             return;
-        }
-        if (checkAfterMove(moveIndex)) {
-            // std::cout << "Castling disallowed: King would end up in check.\n";
+        if (checkAfterMove(gameState, moveIndex))
             return;
-        }
 
         // 5. Execute castling: move the king, then the rook.
         executeMove(moveIndex);
@@ -472,7 +449,6 @@ void CHESSLOGIC::moveKing(std::pair<short, short> moveIndex) {
         // Directly execute the rook move without further validation.
         gameState[rookMove.second] = gameState[rookMove.first];
         gameState[rookMove.first] = 0;
-        // std::cout << "Castling executed successfully.\n";
         return;
     } else {
         // --- Normal King Move ---
@@ -483,18 +459,16 @@ void CHESSLOGIC::moveKing(std::pair<short, short> moveIndex) {
         if (!(std::abs(destRow - srcRow) <= 1 &&
               std::abs(destCol - srcCol) <= 1 &&
               !(destRow == srcRow && destCol == srcCol))) {
-            std::cout << "King move illegal: King can only move one square.\n";
+            //std::cout << "King move illegal: King can only move one square.\n";
             return;
         }
         bool isWhite = (gameState[moveIndex.first] > 0);
         short newKingPos = moveIndex.second;
         short otherKingPos = isWhite ? kingBlackPos : kingWhitePos;
         if (kingsAreAdjacent(newKingPos, otherKingPos)) {
-            // std::cout << "King move illegal: Kings would be adjacent.\n";
             return;
         }
-        if (checkAfterMove(moveIndex)) {
-            // std::cout << "King move invalid: Move leaves king in check.\n";
+        if (checkAfterMove(gameState, moveIndex)) {
             return;
         }
         executeMove(moveIndex);
@@ -510,23 +484,20 @@ void CHESSLOGIC::move(std::pair<short, short> moveIndex) {
     if (it != moveFunctions.end()) {
         it->second(moveIndex);
     } else {
-        // std::cout << "No move function defined for piece code " << pieceCode << ".\n";
+        // No move function defined for this piece.
     }
 }
 
 // ---------------- Undo Function ----------------
 // Undoes the last move by restoring the previous game state and king positions.
 bool CHESSLOGIC::undoMove() {
-    if (undoStack.empty()) {
-        // std::cout << "No moves to undo.\n";
+    if (undoStack.empty())
         return false;
-    }
     MoveInfo lastInfo = undoStack.back();
     undoStack.pop_back();
     gameState = lastInfo.priorGameState;
     kingWhitePos = lastInfo.lastKingWhitePos;
     kingBlackPos = lastInfo.lastKingBlackPos;
-    // std::cout << "Undo successful.\n";
     return true;
 }
 
@@ -608,7 +579,8 @@ std::vector<std::pair<short, short>> CHESSLOGIC::generateSlidingMoves(
             // If destination square is empty or contains an enemy piece, add the move.
             if (state[next] == 0 ||
                 (state[index] > 0 && state[next] < 0) ||
-                (state[index] < 0 && state[next] > 0)) {
+                (state[index] < 0 && state[next] > 0))
+            {
                 moves.push_back({index, next});
             }
             // Stop sliding if the square is occupied.
@@ -689,8 +661,6 @@ std::vector<std::pair<short, short>> CHESSLOGIC::generateMovesForPiece(short ind
             for (const auto &mv : moves) {
                 short targetRow = getRow(mv.second);
                 if ((isWhite && targetRow == 0) || (!isWhite && targetRow == 7)) {
-                    // Debug message commented out.
-                    // std::cout << "Promotion candidate generated: " << mv.first << " -> " << mv.second << "\n";
                     promotionCandidates.push_back(mv);
                 }
             }
@@ -738,13 +708,9 @@ std::vector<std::pair<short, short>> CHESSLOGIC::generateMovesForPiece(short ind
                 bool canQueenside = true;
 
                 // Check that the king and corresponding rook have not moved before.
-                // For white, king must remain at 60 and rook at 63 (kingside) or 56 (queenside).
-                // For black, king must remain at 4 and rook at 7 (kingside) or 0 (queenside).
-                // Scan the undoStack to see if any move originated from these squares.
                 for (const auto &info : undoStack) {
                     if ((state[index] > 0 && (info.lastMove.first == 60 || info.lastMove.first == 63 || info.lastMove.first == 56)) ||
                         (state[index] < 0 && (info.lastMove.first == 4 || info.lastMove.first == 7 || info.lastMove.first == 0))) {
-                        // If either the king or the involved rook has moved, disallow both castling options.
                         canKingside = false;
                         canQueenside = false;
                         break;
@@ -753,26 +719,22 @@ std::vector<std::pair<short, short>> CHESSLOGIC::generateMovesForPiece(short ind
 
                 // Now check for the empty squares and attacked squares.
                 if (state[index] > 0) { // White king.
-                    // Kingside: squares 61 and 62 must be empty and not attacked.
                     if (state[61] != 0 || state[62] != 0)
                         canKingside = false;
-                    else if (checkAfterMove({60, 61}) || checkAfterMove({60, 62}))
+                    else if (checkAfterMove(state, {60, 61}) || checkAfterMove(state, {60, 62}))
                         canKingside = false;
-                    // Queenside: squares 57, 58, 59 must be empty and not attacked.
                     if (state[57] != 0 || state[58] != 0 || state[59] != 0)
                         canQueenside = false;
-                    else if (checkAfterMove({60, 59}) || checkAfterMove({60, 58}))
+                    else if (checkAfterMove(state, {60, 59}) || checkAfterMove(state, {60, 58}))
                         canQueenside = false;
                 } else { // Black king.
-                    // Kingside: squares 5 and 6 must be empty and not attacked.
                     if (state[5] != 0 || state[6] != 0)
                         canKingside = false;
-                    else if (checkAfterMove({4, 5}) || checkAfterMove({4, 6}))
+                    else if (checkAfterMove(state, {4, 5}) || checkAfterMove(state, {4, 6}))
                         canKingside = false;
-                    // Queenside: squares 1, 2, 3 must be empty and not attacked.
                     if (state[1] != 0 || state[2] != 0 || state[3] != 0)
                         canQueenside = false;
-                    else if (checkAfterMove({4, 3}) || checkAfterMove({4, 2}))
+                    else if (checkAfterMove(state, {4, 3}) || checkAfterMove(state, {4, 2}))
                         canQueenside = false;
                 }
 
@@ -789,12 +751,35 @@ std::vector<std::pair<short, short>> CHESSLOGIC::generateMovesForPiece(short ind
     return moves;
 }
 
-// ---------------- Check After Move ----------------
-// Simulates a candidate move on a dummy state and returns true if it leaves the moving side's king in check.
-// Also outputs (if uncommented) which enemy move would check the king for debugging.
-bool CHESSLOGIC::checkAfterMove(std::pair<short, short> candidateMove) {
-    // 1. Create a dummy copy of the current game state.
-    std::vector<short> dummyState = gameState;
+// ---------------- New Generate All Valid Moves Function ----------------
+// Generates all valid moves for the given state by generating raw moves for each piece
+// of the side whose turn it is and filtering out moves that leave the king in check.
+std::vector<std::pair<short, short>> CHESSLOGIC::generateAllValidMoves(const std::vector<short>& state) {
+    std::vector<std::pair<short, short>> validMoves;
+    bool isWhite = (state[64] > 0);
+
+    // Loop over all board squares (indices 0-63).
+    for (short i = 0; i < 64; i++) {
+        // If the square contains a piece belonging to the current player...
+        if (state[i] != 0 && ((isWhite && state[i] > 0) || (!isWhite && state[i] < 0))) {
+            std::vector<std::pair<short, short>> rawMoves = generateMovesForPiece(i, state);
+            for (const auto &move : rawMoves) {
+                // Use the refactored checkAfterMove that accepts the state parameter.
+                if (!checkAfterMove(state, move)) {
+                    validMoves.push_back(move);
+                }
+            }
+        }
+    }
+    return validMoves;
+}
+
+// ---------------- Refactored Check After Move Function ----------------
+// Simulates a candidate move on a dummy copy of the given state and returns true if
+// it leaves the moving side's king in check.
+bool CHESSLOGIC::checkAfterMove(const std::vector<short>& state, std::pair<short, short> candidateMove) {
+    // 1. Create a dummy copy of the provided state.
+    std::vector<short> dummyState = state;
 
     // 2. Simulate the candidate move on the dummy state.
     dummyState[candidateMove.second] = dummyState[candidateMove.first];
@@ -805,83 +790,39 @@ bool CHESSLOGIC::checkAfterMove(std::pair<short, short> candidateMove) {
 
     // 4. Determine the king's position for the moving side.
     short candidateKingPos;
-    if (std::abs(gameState[candidateMove.first]) == 127) {
-        // If the king is moving, its new position is candidateMove.second.
+    if (std::abs(state[candidateMove.first]) == 127) {
         candidateKingPos = candidateMove.second;
     } else {
-        candidateKingPos = (dummyState[64] < 0) ? kingWhitePos : kingBlackPos;
+        // Since dummyState[64] now represents the enemy's turn, the moving side is the opposite.
+        bool movingSideIsWhite = (dummyState[64] < 0);
+        candidateKingPos = getKingPositionInState(dummyState, movingSideIsWhite);
     }
 
     // 5. For every enemy piece in the dummy state, generate its moves.
-    //    If any enemy move's destination equals candidateKingPos, output its source (if debugging) and return true.
     for (short i = 0; i < 64; i++) {
         if (dummyState[i] != 0) {
-            // Enemy pieces have the same sign as dummyState[64].
             if ((dummyState[64] < 0 && dummyState[i] < 0) ||
                 (dummyState[64] > 0 && dummyState[i] > 0)) {
                 std::vector<std::pair<short, short>> enemyMoves = generateMovesForPiece(i, dummyState);
                 for (const auto &move : enemyMoves) {
                     if (move.second == candidateKingPos) {
-                        // Debug output (commented out):
-                        // std::cout << "Enemy move from square " << move.first
-                        //           << " would check the king at " << candidateKingPos << ".\n";
-                        return true; // The king is in check.
+                        return true; // The king would be in check.
                     }
                 }
             }
         }
     }
-    return false; // No enemy move threatens the king.
+    return false;
 }
 
-// ---------------- CheckMate Function ----------------
-// Generates all valid moves for the side whose turn it is by simulating every raw move,
-// and updates the allValidMoves vector and checkMateFlag accordingly.
-// If no valid moves exist, the checkMateFlag is set to true.
-// (This implementation uses the raw move generators and the checkAfterMove function
-//  to filter out moves that would leave the king in check.)
-bool CHESSLOGIC::checkMate() {
-    //std::cout << "checkMate() called. Turn to move: " << turnToMove() << std::endl;
-
-    // Clear any previously stored valid moves.
-    allValidMoves.clear();
-
-    std::vector<std::pair<short, short>> allRawMoves;
-
-    // Determine current player's color.
-    bool isWhite = (turnToMove() > 0);
-
-    // Generate raw moves for every piece belonging to the current player.
+// ---------------- Helper: Get King Position In State ----------------
+// Returns the index of the king for the given color in the provided state.
+// isWhite = true returns white king (127), false returns black king (-127).
+short CHESSLOGIC::getKingPositionInState(const std::vector<short>& state, bool isWhite) {
+    short kingValue = isWhite ? 127 : -127;
     for (short i = 0; i < 64; i++) {
-        if (gameState[i] != 0 && ((isWhite && gameState[i] > 0) || (!isWhite && gameState[i] < 0))) {
-            std::vector<std::pair<short, short>> pieceMoves = generateMovesForPiece(i, gameState);
-            allRawMoves.insert(allRawMoves.end(), pieceMoves.begin(), pieceMoves.end());
-        }
+        if (state[i] == kingValue)
+            return i;
     }
-
-    // Container for moves that do not leave the king in check.
-    std::vector<std::pair<short, short>> validMoves;
-
-    // For each candidate move, if checkAfterMove() returns false then it is valid.
-    for (const auto &candidate : allRawMoves) {
-        if (!checkAfterMove(candidate)) {
-            validMoves.push_back(candidate);
-        }
-    }
-
-    // Save valid moves.
-    allValidMoves = validMoves;
-
-    // If no valid moves exist, set checkMateFlag to true.
-    if (allValidMoves.empty()) {
-        checkMateFlag = true;
-        // Debug output commented out:
-        std::cout << "Checkmate detected: No valid moves available.\n";
-
-        return true;
-    } else {
-        //std::cout << "Possible Moves Number: " << allValidMoves.size() << std::endl;
-        checkMateFlag = false;
-        return false;
-    }
+    return -1; // Should not happen in a legal state.
 }

@@ -11,7 +11,7 @@ CXXFLAGS = -std=c++11 -Wall
 LDFLAGS = -lncurses
 
 # List of source files.
-SRCS = main.cpp chesslogic.cpp board.cpp
+SRCS = main.cpp chesslogic.cpp board.cpp chessAI.cpp
 
 # Automatically generate list of object files by replacing .cpp with .o.
 OBJS = $(SRCS:.cpp=.o)
