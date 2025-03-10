@@ -27,24 +27,41 @@ BOARD::BOARD() {
     mousemask(ALL_MOUSE_EVENTS, NULL);
 
     start_color();
+    //use_default_colors();  // Allow transparency: -1 will mean “use terminal’s default”
     attron(A_BOLD);
 
     if (can_change_color()) {
-        init_color(1, 380, 300, 200);
-        init_color(2, 300, 100, 100);
-        init_color(3, 800, 800, 800);
-        init_pair(1, COLOR_WHITE, 1);
-        init_pair(2, COLOR_YELLOW, 1);
-        init_pair(3, COLOR_WHITE, 2);
-        init_pair(4, COLOR_YELLOW, 2);
+        // We can redefine colors here:
+        init_color(1, 380, 300, 200);  // Some custom color
+        init_color(2, 300, 100, 100);  // Another custom color
+        init_color(3, 800, 800, 800);  // Another custom color
+
+        // Now define color pairs using these custom colors.
+        init_pair(1, COLOR_WHITE, 1);   // White text on custom color 1
+        init_pair(2, COLOR_YELLOW, 1); // Yellow text on custom color 1
+        init_pair(3, COLOR_WHITE, 2);  // White text on custom color 2
+        init_pair(4, COLOR_YELLOW, 2); // Yellow text on custom color 2
         init_pair(5, COLOR_GREEN, COLOR_BLACK);
-        // Set up a new color pair (pair 6) for the UNDO button.
-        init_pair(6, COLOR_RED, 3);
+        init_pair(6, COLOR_RED, 3);    // Red text on custom color 3
     } else {
-        init_pair(1, COLOR_WHITE, COLOR_MAGENTA);
-        init_pair(2, COLOR_YELLOW, COLOR_MAGENTA);
-        init_pair(3, COLOR_WHITE, COLOR_BLUE);
-        init_pair(4, COLOR_YELLOW, COLOR_BLUE);
+        // Fallback: do NOT call init_color().
+        // Use only built-in color constants like COLOR_BLACK, COLOR_BLUE, etc.
+
+        // For example, define color pairs with standard backgrounds:
+        init_pair(1, COLOR_WHITE, COLOR_BLACK);   // White text on black
+        init_pair(2, COLOR_YELLOW, COLOR_BLACK);  // Yellow text on black
+        init_pair(3, COLOR_WHITE, COLOR_BLUE);    // White text on blue
+        init_pair(4, COLOR_YELLOW, COLOR_BLUE);   // Yellow text on blue
+        init_pair(5, COLOR_GREEN, COLOR_BLACK);   // Green text on black
+        init_pair(6, COLOR_RED, COLOR_BLACK);     // Red text on black
+
+        //         // Fallback if terminal does not support changing colors:
+        // init_pair(1, COLOR_WHITE, -1);   // White piece on default background (light square)
+        // init_pair(2, COLOR_MAGENTA, -1); // Black piece on default background (light square)
+        // init_pair(3, COLOR_WHITE, COLOR_BLUE);  // White piece on dark square
+        // init_pair(4, COLOR_MAGENTA, COLOR_BLUE); // Black piece on dark square
+        // init_pair(5, COLOR_GREEN, -1);           // For other elements
+        // init_pair(6, COLOR_RED, -1);             // For the UNDO button
     }
 
     artDict = {
