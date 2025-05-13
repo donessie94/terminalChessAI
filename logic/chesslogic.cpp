@@ -6,8 +6,8 @@
 
 #include "chesslogic.h"
 #include "globals.h"
-#include <cstdlib>   // For std::abs
-#include <cmath>     // For std::abs and std::pow
+#include <cstdlib>
+#include <cmath>
 #include <iostream>
 #include <sstream>
 #include <limits>
@@ -84,7 +84,7 @@ short CHESSLOGIC::getRow(short index) {
         if (index < 8 * k)
             return k - 1;
     }
-    return 7;  // Fallback (should not occur)
+    return 7; //
 }
 
 // ---------------- Sliding Helpers ----------------
@@ -513,7 +513,7 @@ void CHESSLOGIC::move(std::pair<short, short> moveIndex) {
     if (it != moveFunctions.end()) {
         it->second(moveIndex);
     } else {
-        // No move function defined for this piece.
+        // 
     }
 }
 

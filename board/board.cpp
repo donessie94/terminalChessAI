@@ -18,7 +18,7 @@ BOARD::BOARD() {
          false, true, false, true, false, true, false, true
     };
 
-    PIECES pieces;  // Assuming PIECES struct is defined in pieces.h
+    PIECES pieces;
     width = pieces.colSize * 8;
     heigth = pieces.rowSize * 8;
 

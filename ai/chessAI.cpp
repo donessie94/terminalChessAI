@@ -23,7 +23,7 @@ short NODE::getRow(short index) {
         if (index < 8 * k)
             return k - 1;
     }
-    return 7;  // Fallback (should not occur)
+    return 7;
 }
 
 NODE::NODE(NODE* parent, const std::vector<short>& parentState, int depth, std::pair<short, short> move)

@@ -6,7 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <stack>
-#include "chesslogic.h" // This header provides your CHESSLOGIC class and its move generation
+#include "chesslogic.h"
 
 // NODE represents a node in the minimax search tree.
 struct NODE {
@@ -16,7 +16,7 @@ struct NODE {
     NODE* parent;
     // Depth of this node in the tree.
     int depth;
-    // Evaluation value (to be filled in by your evaluation function).
+    // Evaluation value
     double evaluation;
     // Best move from this node (represented as a pair: {source, destination}).
     std::pair<short, short> bestMove;
