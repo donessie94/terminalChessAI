@@ -39,6 +39,8 @@ public:
     std::vector<std::pair<short, short>> allValidMoves;
     // True if the current player is in checkmate.
     bool checkMateFlag;
+    bool blackCanCastle;
+    bool whiteCanCastle;
 
     // ------------------ Raw Move Generation ------------------
     // These helper functions generate raw moves (without full check validation) for each piece.

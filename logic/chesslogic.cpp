@@ -5,11 +5,15 @@
 // Detailed debug messages are output to std::cout when moves are invalid.
 
 #include "chesslogic.h"
+#include "globals.h"
 #include <cstdlib>   // For std::abs
 #include <cmath>     // For std::abs and std::pow
 #include <iostream>
 #include <sstream>
 #include <limits>
+
+//global pointer to the logic instance running the game
+CHESSLOGIC* chessLogicPtr = nullptr;
 
 // Stub for check: In a full implementation, this would determine whether a move creates a check.
 // For now, it always returns false for demonstration.
@@ -36,6 +40,8 @@ CHESSLOGIC::CHESSLOGIC() {
          5,  3,  6,  9, 127,  6,  3,  5,
          1   // Turn indicator: white's turn.
     };
+
+    chessLogicPtr = this;
 
     // Set fixed starting king positions.
     kingBlackPos = 4;   // Black king starts at index 4.
@@ -164,7 +170,8 @@ void CHESSLOGIC::saveLastMove(std::pair<short, short> moveIndex) {
     info.lastMove = moveIndex;
     info.lastKingWhitePos = kingWhitePos;
     info.lastKingBlackPos = kingBlackPos;
-    // Record the piece that moved and any captured piece (0 if none).
+    info.whiteCanCastle = whiteCanCastle; // Save castling rights.
+    info.blackCanCastle = blackCanCastle;
     info.movedPiece = gameState[moveIndex.first];
     info.capturedPiece = gameState[moveIndex.second];
     undoStack.push_back(info);
@@ -173,7 +180,29 @@ void CHESSLOGIC::saveLastMove(std::pair<short, short> moveIndex) {
 // Executes a validated move: saves state, updates the board, toggles turn,
 // and then updates valid moves and the checkmate flag using generateAllValidMoves().
 void CHESSLOGIC::executeMove(std::pair<short, short> moveIndex) {
+    // Save the current state including castling rights.
     saveLastMove(moveIndex);
+
+    // Determine if this move is a castling move.
+    bool isCastlingMove = (std::abs(moveIndex.second - moveIndex.first) == 2);
+
+    // If it's not a castling move, update castling rights.
+    if (!isCastlingMove) {
+        // For white: if the king moves from its starting square (60) or a rook moves from 63 or 56.
+        if ((moveIndex.first == 60 && gameState[60] == 127) ||
+            (moveIndex.first == 63 && gameState[63] == 5) ||
+            (moveIndex.first == 56 && gameState[56] == 5)) {
+            whiteCanCastle = false;
+        }
+        // For black: if the king moves from its starting square (4) or a rook moves from 7 or 0.
+        if ((moveIndex.first == 4 && gameState[4] == -127) ||
+            (moveIndex.first == 7 && gameState[7] == -5) ||
+            (moveIndex.first == 0 && gameState[0] == -5)) {
+            blackCanCastle = false;
+        }
+    }
+
+    // Now execute the move.
     gameState[moveIndex.second] = gameState[moveIndex.first];
     gameState[moveIndex.first] = 0;
     changeTurn();
@@ -498,6 +527,8 @@ bool CHESSLOGIC::undoMove() {
     gameState = lastInfo.priorGameState;
     kingWhitePos = lastInfo.lastKingWhitePos;
     kingBlackPos = lastInfo.lastKingBlackPos;
+    whiteCanCastle = lastInfo.whiteCanCastle;  // Restore castling rights.
+    blackCanCastle = lastInfo.blackCanCastle;
     return true;
 }
 
@@ -702,12 +733,13 @@ std::vector<std::pair<short, short>> CHESSLOGIC::generateMovesForPiece(short ind
                         moves.push_back({index, candidate});
                 }
             }
-            // Castle moves: only generate if the king is in its starting position.
-            if ((state[index] > 0 && index == 60) || (state[index] < 0 && index == 4)) {
+            // Generate castling moves only if the king is on its starting square and castling rights are available.
+            if ((state[index] > 0 && index == 60 && whiteCanCastle) ||
+                (state[index] < 0 && index == 4 && blackCanCastle)) {
+                // (Castling move generation code as before.)
                 bool canKingside = true;
                 bool canQueenside = true;
-
-                // Check that the king and corresponding rook have not moved before.
+                // Check that the king and corresponding rook have not moved before by scanning undoStack.
                 for (const auto &info : undoStack) {
                     if ((state[index] > 0 && (info.lastMove.first == 60 || info.lastMove.first == 63 || info.lastMove.first == 56)) ||
                         (state[index] < 0 && (info.lastMove.first == 4 || info.lastMove.first == 7 || info.lastMove.first == 0))) {
@@ -716,8 +748,7 @@ std::vector<std::pair<short, short>> CHESSLOGIC::generateMovesForPiece(short ind
                         break;
                     }
                 }
-
-                // Now check for the empty squares and attacked squares.
+                // Check for empty squares and attacked squares.
                 if (state[index] > 0) { // White king.
                     if (state[61] != 0 || state[62] != 0)
                         canKingside = false;
@@ -737,7 +768,6 @@ std::vector<std::pair<short, short>> CHESSLOGIC::generateMovesForPiece(short ind
                     else if (checkAfterMove(state, {4, 3}) || checkAfterMove(state, {4, 2}))
                         canQueenside = false;
                 }
-
                 if (canKingside)
                     moves.push_back({index, (state[index] > 0) ? 62 : 6});
                 if (canQueenside)

@@ -17,7 +17,7 @@ struct NODE {
     // Depth of this node in the tree.
     int depth;
     // Evaluation value (to be filled in by your evaluation function).
-    int evaluation;
+    double evaluation;
     // Best move from this node (represented as a pair: {source, destination}).
     std::pair<short, short> bestMove;
     // A unique string representation of the state for duplicate detection.
@@ -37,7 +37,7 @@ struct NODE {
     // Build the unique string representation of the state.
     void buildStateString();
     // Evaluate the node
-    void evaluateNode();
+    void evaluateNode(const std::vector<std::pair<short, short>>& validMoves);
     // Back up the evaluation value to the parent node.
     void backUpEvaluation();
 };
@@ -49,12 +49,12 @@ public:
     ~ALPHA_BETA();
 
     // Perform the search starting from the root node.
-    void search(NODE* current, int alpha, int beta);
+    void search(NODE* current, double alpha, double beta);
     // Return the best move found from the root node.
     std::pair<short, short> getBestMove() const;
     // Clear any stored search data.
     void clearSearch();
-
+    double heuristicMoveScore(const std::pair<short, short>& move, const std::vector<short>& state);
     // Maximum depth for the search.
     int maxDepth;
     // The best move found at the root.
@@ -73,6 +73,7 @@ public:
     ChessAI();
     // Given a CHESSLOGIC instance, return the best move as a {source, destination} pair.
     std::pair<short, short> getBestMove(CHESSLOGIC& game);
+    double getRootEvaluation() const;
 
 private:
     ALPHA_BETA ab; // The alpha–beta search object.
