@@ -6,7 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <stack>
-#include "chesslogic.h"
+#include "../logic/chesslogic.h"
 
 // NODE represents a node in the minimax search tree.
 struct NODE {

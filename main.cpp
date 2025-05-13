@@ -1,6 +1,6 @@
-#include "board.h"
-#include "chesslogic.h"
-#include "chessAI.h"
+#include "board/board.h"
+#include "logic/chesslogic.h"
+#include "ai/chessAI.h"
 #include <ncurses.h>
 #include <iostream>
 #include <sstream>

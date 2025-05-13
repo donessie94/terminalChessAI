@@ -1,11 +1,10 @@
-// chesslogic.cpp
 // This file implements the CHESSLOGIC class, which encapsulates the game state,
 // move execution (including special moves such as en passant, castling, and promotion),
 // move validation (including checking for checks and checkmate), and raw move generation.
 // Detailed debug messages are output to std::cout when moves are invalid.
 
 #include "chesslogic.h"
-#include "globals.h"
+#include "../utils/globals.h"
 #include <cstdlib>
 #include <cmath>
 #include <iostream>
@@ -237,7 +236,7 @@ void CHESSLOGIC::movePawn(std::pair<short, short> moveIndex) {
     bool isWhite = (gameState[moveIndex.first] > 0);
     short source = moveIndex.first;
     short target = moveIndex.second;
-    short row = getRow(source);
+    //short row = getRow(source);
     short col = getCol(source);
     std::vector<short> candidates;
     int forwardDir = isWhite ? -8 : 8;
@@ -513,7 +512,7 @@ void CHESSLOGIC::move(std::pair<short, short> moveIndex) {
     if (it != moveFunctions.end()) {
         it->second(moveIndex);
     } else {
-        // 
+        //
     }
 }
 

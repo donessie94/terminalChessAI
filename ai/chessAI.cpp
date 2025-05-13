@@ -1,6 +1,6 @@
 #include "chessAI.h"
-#include "chesslogic.h"
-#include "globals.h"
+#include "../logic/chesslogic.h"
+#include "../utils/globals.h"
 #include <sstream>
 #include <limits>
 #include <algorithm>
@@ -210,7 +210,7 @@ void NODE::backUpEvaluation() {
 // -----------------------
 
 ALPHA_BETA::ALPHA_BETA()
-    : chessLogic(new CHESSLOGIC()), maxDepth(4), bestMove({0, 0}), root(nullptr), closedNodes() {}
+    : maxDepth(4), bestMove({0, 0}), root(nullptr), closedNodes(), chessLogic(new CHESSLOGIC()) {}
 
 ALPHA_BETA::~ALPHA_BETA() {
         delete chessLogic;

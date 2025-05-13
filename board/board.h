@@ -4,8 +4,8 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
-#include "pieces.h"
-#include "moveinfo.h"
+#include "../pieces/pieces.h"
+#include "../utils/moveinfo.h"
 #include <ncurses.h>
 
 struct BOARD {
@@ -43,7 +43,7 @@ struct BOARD {
 
 
 
-    
+
     void testDraw(WINDOW* win) {
         mvwprintw(win, 1, 1, "Test: Board drawing works!");
         wrefresh(win);

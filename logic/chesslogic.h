@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <functional>
 #include <string>
-#include "moveinfo.h"
+#include "../utils/moveinfo.h"
 
 // CHESSLOGIC encapsulates the game state, move dispatching (including special moves),
 // move validation (checking for check and checkmate), undo functionality, and raw move generation.

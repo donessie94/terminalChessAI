@@ -2,7 +2,7 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 
-#include "chesslogic.h"
+#include "../logic/chesslogic.h"
 
 extern CHESSLOGIC* chessLogicPtr;  // Declaration of the global pointer
 
