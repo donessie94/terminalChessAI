@@ -52,7 +52,7 @@ sudo apt install build-essential libncurses5-dev libncursesw5-dev
 # macOS (Homebrew):
 brew install ncurses
 
-Windows (MSYS2/MinGW-w64)
+# Windows (MSYS2/MinGW-w64)
 	1.	Install MSYS2 from https://www.msys2.org
 	2.	Open “MSYS2 MinGW-64-bit” shell and run:
 pacman -Syu
