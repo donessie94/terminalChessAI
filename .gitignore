@@ -30,3 +30,16 @@
 *.exe
 *.out
 *.app
+
+# CMake build directory
+/build/
+
+# CMake artifacts (if run in‐source)
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+
+# Executables
+chess
+chess.exe
