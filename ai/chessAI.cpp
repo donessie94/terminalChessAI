@@ -2,6 +2,7 @@
 #include "../logic/chesslogic.h"
 #include "../utils/globals.h"
 #include <sstream>
+#include <cmath>
 #include <limits>
 #include <algorithm>
 #include <iostream>
