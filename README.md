@@ -14,20 +14,7 @@ A terminal-based chess game written in C++, featuring an AI opponent powered by 
 - **AI opponent** with configurable search depth (minimax + αβ pruning)  
 - **Move history** panel and undo support  
 - **Clean folder structure**: `ai/`, `board/`, `logic/`, `pieces/`, `utils/`  
-- **Easy build** via a simple Makefile  
-
----
-
-## How to Run
-
-- **Clone the repository:**  
-  `git clone https://github.com/donessie94/terminalChessAI.git && cd terminalChessAI`
-
-- **Compile the game:**  
-  `make`
-
-- **Launch the game:**  
-  `./chess`
+- **Easy build** via CMake  
 
 ---
 
@@ -39,21 +26,40 @@ A terminal-based chess game written in C++, featuring an AI opponent powered by 
 
 ---
 
-## Dependencies
-
-- A C++11-compatible compiler (e.g. `g++`)  
-- NCurses development headers and library  
+## Dependencies & How to Build/Run
 
 ```bash
+# 1. Install prerequisites:
+
 # Ubuntu / Debian:
 sudo apt update
-sudo apt install build-essential libncurses5-dev libncursesw5-dev
+sudo apt install build-essential cmake libncurses5-dev libncursesw5-dev
 
 # macOS (Homebrew):
-brew install ncurses
+brew install cmake ncurses
 
-# Windows (MSYS2/MinGW-w64)
-	1.	Install MSYS2 from https://www.msys2.org
-	2.	Open “MSYS2 MinGW-64-bit” shell and run:
+# Windows (MSYS2 MinGW-w64):
+# 1. Install MSYS2: https://www.msys2.org
+# 2. In “MSYS2 MinGW-64-bit” shell:
 pacman -Syu
-pacman -S mingw-w64-x86_64-toolchain mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_image
+pacman -S mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-ncurses
+
+# 2. Clone & enter project:
+git clone https://github.com/donessie94/terminalChessAI.git
+cd terminalChessAI
+
+# 3. Create out-of-source build directory:
+mkdir build && cd build
+
+# 4. Generate build files with CMake:
+cmake ..
+
+# 5. Compile:
+cmake --build .
+
+# 6. Run:
+./chess        # Linux/macOS or MSYS2 shell on Windows
+chess.exe      # same on Windows if not in a POSIX shell
+
+# 7. Clean up:
+#    simply delete the entire build/ directory when done
