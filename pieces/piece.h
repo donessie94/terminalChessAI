@@ -1,12 +1,5 @@
 #pragma once
-#include "../utils/miscellanous.h"
-
-// Helper that builds the full dictionary of moves
-// for each piece type and direction.
-static std::unordered_map<
-    PIECE_TYPE,
-    std::unordered_map<DIRECTION, std::vector<MOVE>>
-> buildMovesDictionary();
+#include "../utils/moveHelpers.h"
 
 class PIECE {
 public:
@@ -52,12 +45,12 @@ public:
     }
 
     // Abstract methods for directional valid moves
-    virtual std::vector<MOVE> getUpMoves(const POSITION& pos) const = 0;
-    virtual std::vector<MOVE> getDownMoves(const POSITION& pos) const = 0;
-    virtual std::vector<MOVE> getLeftMoves(const POSITION& pos) const = 0;
-    virtual std::vector<MOVE> getRightMoves(const POSITION& pos) const = 0;
-    virtual std::vector<MOVE> getUpLeftMoves(const POSITION& pos) const = 0;
-    virtual std::vector<MOVE> getUpRightMoves(const POSITION& pos) const = 0;
-    virtual std::vector<MOVE> getDownLeftMoves(const POSITION& pos) const = 0;
-    virtual std::vector<MOVE> getDownRightMoves(const POSITION& pos) const = 0;
+    virtual std::vector<MOVE> getUpMoves(const POSITION& from) const = 0;
+    virtual std::vector<MOVE> getDownMoves(const POSITION& from) const = 0;
+    virtual std::vector<MOVE> getLeftMoves(const POSITION& from) const = 0;
+    virtual std::vector<MOVE> getRightMoves(const POSITION& from) const = 0;
+    virtual std::vector<MOVE> getUpLeftMoves(const POSITION& from) const = 0;
+    virtual std::vector<MOVE> getUpRightMoves(const POSITION& from) const = 0;
+    virtual std::vector<MOVE> getDownLeftMoves(const POSITION& from) const = 0;
+    virtual std::vector<MOVE> getDownRightMoves(const POSITION& from) const = 0;
 };

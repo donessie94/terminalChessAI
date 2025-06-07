@@ -1,11 +1,9 @@
 #pragma once
-#include <vector>
-#include "../utils/miscellanous.h"
 #include "../pieces/piece.h"
 
 class CHESS {
 public:
-    std::vector<PIECE> board; // 64 squares, each with a piece or empty
+    std::vector<std::unique_ptr<PIECE>> board; // Board containing pieces, using smart pointers for memory management
     std::vector<MOVE> validMoves; // Valid moves for the current player
     COLOR currentPlayer; // Current player (WHITE or BLACK)
     int turnCount; // Number of turns played

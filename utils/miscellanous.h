@@ -1,8 +1,9 @@
 #pragma once
+#include <vector>
 #include <unordered_map>
+#include <string>
 #include <utility>   // for std::pair
 #include <stdexcept>
-#include <string>
 
 // Color enum for white/black
 enum class COLOR { WHITE, BLACK };
@@ -11,9 +12,41 @@ enum class COLOR { WHITE, BLACK };
 enum class PIECE_TYPE { PAWN, ROOK, KNIGHT, BISHOP, QUEEN, KING, EMPTY };
 
 // Direction enum for move directions
-enum class DIRECTION {
-    UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT
-};
+enum class DIRECTION { UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT };
+
+// Return {PAWN, ROOK, …, KING}
+std::vector<PIECE_TYPE> allPieceTypes(){
+    return {
+        PIECE_TYPE::PAWN,
+        PIECE_TYPE::ROOK,
+        PIECE_TYPE::KNIGHT,
+        PIECE_TYPE::BISHOP,
+        PIECE_TYPE::QUEEN,
+        PIECE_TYPE::KING,
+    };
+}
+
+std::vector<DIRECTION> allDirections(PIECE_TYPE pt) {
+    switch (pt) {
+        case PIECE_TYPE::PAWN:
+            return {DIRECTION::UP, DIRECTION::UP_LEFT, DIRECTION::UP_RIGHT,
+                    DIRECTION::DOWN, DIRECTION::DOWN_LEFT, DIRECTION::DOWN_RIGHT};
+        case PIECE_TYPE::ROOK:
+            return {DIRECTION::UP, DIRECTION::DOWN, DIRECTION::LEFT, DIRECTION::RIGHT};
+        case PIECE_TYPE::KNIGHT:
+            return {DIRECTION::UP_LEFT, DIRECTION::UP_RIGHT, DIRECTION::DOWN_LEFT, DIRECTION::DOWN_RIGHT};
+        case PIECE_TYPE::BISHOP:
+            return {DIRECTION::UP_LEFT, DIRECTION::UP_RIGHT, DIRECTION::DOWN_LEFT, DIRECTION::DOWN_RIGHT};
+        case PIECE_TYPE::QUEEN:
+            return {DIRECTION::UP, DIRECTION::DOWN, DIRECTION::LEFT, DIRECTION::RIGHT,
+                    DIRECTION::UP_LEFT, DIRECTION::UP_RIGHT, DIRECTION::DOWN_LEFT, DIRECTION::DOWN_RIGHT};
+        case PIECE_TYPE::KING:
+            return {DIRECTION::UP, DIRECTION::DOWN, DIRECTION::LEFT, DIRECTION::RIGHT,
+                    DIRECTION::UP_LEFT, DIRECTION::UP_RIGHT, DIRECTION::DOWN_LEFT, DIRECTION::DOWN_RIGHT};
+        default:
+            return {};
+    }
+}
 
 // ----------------------------------------------------------------
 // Helper: build a map from [0..63] → (rank, fileLetter) in “a1→0, b1→1, …, h8→63” order
