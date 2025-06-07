@@ -1,8 +1,8 @@
+#pragma once
 #include<vector>
-#include<unordered_map>
 
-struct PIECES
-{
+struct PIECE_ART {
+
     // Define a simple UNDO button using ASCII characters.
     // The design is 3 lines tall and about 15 columns wide.
     std::vector<std::string> undoButton = {
