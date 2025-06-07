@@ -110,6 +110,9 @@ public:
         setPosition(pos);
     }
 
+    //copy constructor
+    POSITION(const POSITION& other) = default;
+
     std::string toAlgebraicNotation() const {
         return std::string{file} + std::to_string(rank);
     }

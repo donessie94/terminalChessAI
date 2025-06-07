@@ -108,6 +108,8 @@ std::vector<MOVE> computeMovesFor(
     }
 }
 
+//-----------------------------------------------------------------------------
+// Raw move computation functions for each piece type and direction
 std::vector<MOVE> computeKnightUP_LEFT(const POSITION &from) {
     std::vector<MOVE> moves;
 

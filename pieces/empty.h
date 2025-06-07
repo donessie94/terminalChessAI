@@ -4,7 +4,7 @@
 // “empty” piece subclass to represent no piece:
 class EMPTY_PIECE : public PIECE {
 public:
-    EMPTY_PIECE(int pos) : PIECE(PIECE_TYPE::EMPTY, COLOR::WHITE, pos) {}
+    EMPTY_PIECE(POSITION pos) : PIECE(PIECE_TYPE::EMPTY, COLOR::WHITE, pos) {}
 
     std::vector<MOVE> getUpMoves(const POSITION& from) const override {
         return {};

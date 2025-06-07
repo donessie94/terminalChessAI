@@ -13,7 +13,7 @@ public:
     > movesDictionary = buildMovesDictionary();
 
     // Constructor for base fields
-    PIECE(PIECE_TYPE t, COLOR c, int pos)
+    PIECE(PIECE_TYPE t, COLOR c, POSITION pos)
         : type(t), color(c), position(pos){
     }
 
