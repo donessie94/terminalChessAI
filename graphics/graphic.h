@@ -25,16 +25,31 @@ public:
     SDL_Texture* faceAI = nullptr;
     SDL_Texture* faceHumanW = nullptr;
     SDL_Texture* faceHumanB = nullptr;
+    SDL_Texture* thinkingStrip = nullptr;
+
 
     SDL_Rect lightSquareRect;
     SDL_Rect darkSquareRect;
+    SDL_Rect thinkAnimationAI[6];
+
+    // animation state
+    int     thinkFrameIndex   = 0;
+    Uint32  lastThinkUpdate   = 0;
+    static constexpr Uint32 THINK_FRAME_DURATION = 1800; // ms per frame
+
+    int highLightIndex;
 
     GRAPHICS() = default;
     ~GRAPHICS();
 
+    void getHighlightIndex(int index);
+    void drawBoard();
+    void drawFaces();
+    void drawPieces(const CHESS& state);
+    void drawPieceHighLight();
+    void drawMoveHint(const CHESS& state);
+
     // Return true on success, false on any init error:
     bool init(const char* windowTitle, int w, int h);
-
-    // Clears & presents the backbuffer
-    void clear(const CHESS& game);
+    void clear(const CHESS& state);
 };

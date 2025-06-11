@@ -4,11 +4,13 @@
 
 class InputHandler {
 public:
-    InputHandler() = default;
+    InputHandler();
 
     // Returns false if quit was requested
     bool handleEvent(const SDL_Event& ev, CHESS& state);
     void pollInputs(CHESS& state, bool& running);
+    int getClickedSquareIndex();
 private:
     int mapClickToSquare(int mouseX, int mouseY);
+    int squareIndexClicked;
 };

@@ -1,5 +1,7 @@
 #include "inputHandler.h"
 
+InputHandler::InputHandler() { squareIndexClicked = -1; }
+
 bool InputHandler::handleEvent(const SDL_Event &ev, CHESS &state)
 {
     if (ev.type == SDL_QUIT) {
@@ -10,10 +12,10 @@ bool InputHandler::handleEvent(const SDL_Event &ev, CHESS &state)
         int y = ev.button.y;
         // map (x,y) to squareIndex as before
         int squareIndex = mapClickToSquare(x, y);
-        if (squareIndex >= 0) {
-            // e.g., select or move piece in state
-            //state.onSquareClicked(squareIndex);
-        }
+        if (squareIndex >= 0)
+            squareIndexClicked = squareIndex;
+        else
+            squareIndexClicked = -1;
     }
 
     return true; // continue running
@@ -29,6 +31,8 @@ void InputHandler::pollInputs(CHESS &state, bool &running)
         }
     }
 }
+
+int InputHandler::getClickedSquareIndex() { return squareIndexClicked; }
 
 int InputHandler::mapClickToSquare(int mouseX, int mouseY)
 {

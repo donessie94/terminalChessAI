@@ -18,6 +18,7 @@ int main(int argc, char* argv[])
     bool running = true;
     while (running) {
         inputHandler.pollInputs(chess, running);
+        gfx.getHighlightIndex(inputHandler.getClickedSquareIndex());
         gfx.clear(chess);
     }
 

@@ -1,5 +1,7 @@
 #include "graphic.h"
 
+void GRAPHICS::getHighlightIndex(int index) { highLightIndex = index; }
+
 GRAPHICS::~GRAPHICS() {
     if(renderer) {SDL_DestroyRenderer(renderer);}
     if(window) {SDL_DestroyWindow(window);}
@@ -21,6 +23,8 @@ GRAPHICS::~GRAPHICS() {
 }
 
 bool GRAPHICS::init(const char* windowTitle, int w, int h) {
+    highLightIndex = -1;
+
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         SDL_Log("SDL_Init Error: %s", SDL_GetError());
         return false;
@@ -86,6 +90,7 @@ bool GRAPHICS::init(const char* windowTitle, int w, int h) {
     }
     SDL_SetTextureBlendMode(boardTexture, SDL_BLENDMODE_BLEND);
 
+    //
     surf = IMG_Load("assets/redStoneAI.png");
     if (!surf) {
         SDL_Log("IMG_Load Error: %s", IMG_GetError());
@@ -99,6 +104,7 @@ bool GRAPHICS::init(const char* windowTitle, int w, int h) {
     }
     SDL_SetTextureBlendMode(faceAI, SDL_BLENDMODE_BLEND);
 
+    //
     surf = IMG_Load("assets/face1.png");
     if (!surf) {
         SDL_Log("IMG_Load Error: %s", IMG_GetError());
@@ -111,6 +117,34 @@ bool GRAPHICS::init(const char* windowTitle, int w, int h) {
         return false;
     }
     SDL_SetTextureBlendMode(faceHumanW, SDL_BLENDMODE_BLEND);
+
+    //
+    surf = IMG_Load("assets/redStoneThinking.png");
+    if (!surf) {
+        SDL_Log("IMG_Load Error: %s", IMG_GetError());
+        return false;
+    }
+    thinkingStrip = SDL_CreateTextureFromSurface(renderer, surf);
+    SDL_FreeSurface(surf);
+    if (!thinkingStrip) {
+        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+        return false;
+    }
+    SDL_SetTextureBlendMode(thinkingStrip, SDL_BLENDMODE_BLEND);
+
+    // animation
+    // 310 x 390 71 - 30
+    // 431
+    // 828
+    //     418
+    constexpr int ANIM_W = 310;
+    constexpr int ANIM_H = 390;
+    thinkAnimationAI[0] = {71, 30, ANIM_W, ANIM_H};
+    thinkAnimationAI[1] = {431, 30, ANIM_W, ANIM_H};
+    thinkAnimationAI[2] = {829, 30, ANIM_W, ANIM_H};
+    thinkAnimationAI[3] = {71, 418, ANIM_W, ANIM_H};
+    thinkAnimationAI[4] = {431, 418, ANIM_W, ANIM_H};
+    thinkAnimationAI[5] = {829, 418, ANIM_W, ANIM_H};
 
     // surf = IMG_Load("assets/wPawn.png");
     // if (!surf) {
@@ -523,33 +557,49 @@ bool GRAPHICS::init(const char* windowTitle, int w, int h) {
     return true;
 }
 
-void GRAPHICS::clear(const CHESS& state) {
-    // I enable blending so PNGs with transparency render correctly
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-
-    // 1) Clear screen and draw the full board background
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderClear(renderer);
+void GRAPHICS::drawBoard()
+{
     if (SDL_RenderCopy(renderer, boardTexture, nullptr, nullptr) != 0) {
         SDL_Log("RenderCopy boardTexture failed: %s", SDL_GetError());
     }
+}
 
-    SDL_Rect faceB = {69, 0, 79, 79};
-    SDL_Rect faceW = {69, 948, 79, 77};
-
-    if (SDL_RenderCopy(renderer, faceAI, nullptr, &faceB) != 0) {
-        SDL_Log("RenderCopy boardTexture failed: %s", SDL_GetError());
+void GRAPHICS::drawFaces()
+{
+    // ---- AI “face” (animated) ----
+    // 1) Advance frame if enough time has passed
+    Uint32 now = SDL_GetTicks();
+    if (now - lastThinkUpdate >= THINK_FRAME_DURATION) {
+        // move to next frame, wrap at 6
+        thinkFrameIndex = (thinkFrameIndex + 1) % 6;
+        lastThinkUpdate = now;
     }
-    if (SDL_RenderCopy(renderer, faceHumanW, nullptr, &faceW) != 0) {
-        SDL_Log("RenderCopy boardTexture failed: %s", SDL_GetError());
+
+    // 2) pick source rect for current frame
+    const SDL_Rect& srcAI = thinkAnimationAI[thinkFrameIndex];
+
+    // 3) destination rect on screen (same as your old faceB)
+    SDL_Rect dstAI = { 69, 0, 79, 79 };
+
+    // 4) render that sub-rect of the thinkingStrip
+    if (SDL_RenderCopy(renderer, thinkingStrip, &srcAI, &dstAI) != 0) {
+        SDL_Log("RenderCopy thinkingStrip failed: %s", SDL_GetError());
     }
 
-    // Define the scale factor for piece size (now 1.1)
+    // ---- Human face (static) ----
+    SDL_Rect dstW = { 69, 948, 79, 77 };
+    if (SDL_RenderCopy(renderer, faceHumanW, nullptr, &dstW) != 0) {
+        SDL_Log("RenderCopy faceHumanW failed: %s", SDL_GetError());
+    }
+}
+
+void GRAPHICS::drawPieces(const CHESS& state) {
+    // Define the scale factor for piece size
     const float scale = 1.1f;
     // Base square dimensions
     const int baseW = SQUARE_WIDTH;
     const int baseH = SQUARE_HEIGHT;
-    // Compute scaled dimensions (rounding down via int cast; if you prefer rounding, you could add 0.5f)
+    // Compute scaled dimensions
     const int scaledW = int(baseW * scale);
     const int scaledH = int(baseH * scale);
     // Offsets to center the scaled piece in the square
@@ -611,7 +661,82 @@ void GRAPHICS::clear(const CHESS& state) {
             SDL_Log("RenderCopy piece failed: %s", SDL_GetError());
         }
     }
+}
 
-    // 3) Present everything on screen
+void GRAPHICS::drawPieceHighLight() {
+    // If no square is selected, do nothing
+    if (highLightIndex < 0 || highLightIndex >= 64) {
+        return;
+    }
+    // Compute fileIndex (0..7) and rankIndex0 (0..7) from selectedSquareIndex
+    int fileIndex = highLightIndex % 8;    // 0 = 'a', 7 = 'h'
+    int rankIndex0 = highLightIndex / 8;    // 0 = rank 1, 7 = rank 8
+    // Invert rank so rank 1 is bottom row
+    int invertedRank = 7 - rankIndex0;
+
+    // Compute the top-left pixel of the square in window coordinates
+    int squareX = BOARD_START_W + fileIndex * SQUARE_WIDTH + fileIndex * LINE_SIZE;
+    int squareY = BOARD_START_H + invertedRank * SQUARE_HEIGHT + invertedRank * LINE_SIZE;
+
+    SDL_Rect highlightRect = {
+        squareX,
+        squareY,
+        SQUARE_WIDTH,
+        SQUARE_HEIGHT
+    };
+
+    // Draw a green 1px border around highlightRect
+    // I set draw color to green
+    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+    // SDL_RenderDrawRect draws a 1px border. If I want thicker, I could draw nested rects.
+    if (SDL_RenderDrawRect(renderer, &highlightRect) != 0) {
+        SDL_Log("RenderDrawRect highlight failed: %s", SDL_GetError());
+    }
+
+    // thicker border
+    // 2px-thick border by drawing an inner rect inset by 1
+    SDL_Rect innerRect = {
+        highlightRect.x + 1,
+        highlightRect.y + 1,
+        highlightRect.w - 2,
+        highlightRect.h - 2
+    };
+    if (innerRect.w > 0 && innerRect.h > 0) {
+        if (SDL_RenderDrawRect(renderer, &innerRect) != 0) {
+            SDL_Log("RenderDrawRect inner highlight failed: %s", SDL_GetError());
+        }
+    }
+}
+
+// void GRAPHICS::drawMoveHint(const CHESS& state)
+// {
+//     // If no square is selected, do nothing
+//     if (highLightIndex < 0 || highLightIndex >= 64) {
+//         return;
+//     }
+//     for(auto dir : DIRECTION direction){
+
+//     }
+// }
+
+void GRAPHICS::clear(const CHESS &state)
+{
+    // I enable blending so PNGs with transparency render correctly
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+    // 1) Clear screen and draw the full board background
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderClear(renderer);
+
+    drawBoard();
+    drawFaces();
+    drawPieces(state);
+    drawPieceHighLight();
+    //drawMoveHint(state);
+
     SDL_RenderPresent(renderer);
 }
+
+
+
+
