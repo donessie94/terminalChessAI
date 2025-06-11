@@ -3,7 +3,7 @@
 
 // Helper that builds the full dictionary of moves
 // for each piece type and direction.
-static std::unordered_map<
+std::unordered_map<
     PIECE_TYPE,
     std::unordered_map<DIRECTION, std::vector<MOVE>>
 > buildMovesDictionary();

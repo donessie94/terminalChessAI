@@ -1,0 +1,49 @@
+#include "inputHandler.h"
+
+bool InputHandler::handleEvent(const SDL_Event &ev, CHESS &state)
+{
+    if (ev.type == SDL_QUIT) {
+        return false;
+    }
+    if (ev.type == SDL_MOUSEBUTTONDOWN) {
+        int x = ev.button.x;
+        int y = ev.button.y;
+        // map (x,y) to squareIndex as before
+        int squareIndex = mapClickToSquare(x, y);
+        if (squareIndex >= 0) {
+            // e.g., select or move piece in state
+            //state.onSquareClicked(squareIndex);
+        }
+    }
+
+    return true; // continue running
+}
+
+void InputHandler::pollInputs(CHESS &state, bool &running)
+{
+    SDL_Event ev;
+    while (SDL_PollEvent(&ev)) {
+        if (!handleEvent(ev, state)) {
+            running = false;
+            break;
+        }
+    }
+}
+
+int InputHandler::mapClickToSquare(int mouseX, int mouseY)
+{
+    int relX = mouseX - BOARD_START_W;
+    int relY = mouseY - BOARD_START_H;
+    int cellFullW = SQUARE_WIDTH + LINE_SIZE;
+    int cellFullH = SQUARE_HEIGHT + LINE_SIZE;
+    int boardW = 8 * cellFullW - LINE_SIZE;
+    int boardH = 8 * cellFullH - LINE_SIZE;
+    if (relX < 0 || relX >= boardW || relY < 0 || relY >= boardH)
+        return -1; //-1 means the click was not on the board basically
+    int fileIndex = relX / cellFullW;
+    int rowFromTop = relY / cellFullH;
+    int rankIndex0 = 7 - rowFromTop;
+    return rankIndex0 * 8 + fileIndex;
+}
+
+

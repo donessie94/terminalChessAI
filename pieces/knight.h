@@ -4,7 +4,7 @@
 class KNIGHT : public PIECE {
 public:
     // Constructor for KNIGHT piece
-    KNIGHT(COLOR color, POSITION pos)
+    KNIGHT(POSITION pos, COLOR color)
         : PIECE(PIECE_TYPE::KNIGHT, color, pos) {
     }
 
@@ -24,7 +24,7 @@ public:
     std::vector<MOVE> getRightMoves(const POSITION& from) const override {
         return {}; // Knights do not move straight right
     }
-    
+
     std::vector<MOVE> getUpLeftMoves(const POSITION& from) const override {
         std::vector<MOVE> validMoves;
 

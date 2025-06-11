@@ -10,19 +10,19 @@ A terminal-based chess game written in C++, featuring an AI opponent powered by 
 
 ## Features
 
-- **Interactive ASCII GUI** using NCurses  
-- **AI opponent** with configurable search depth (minimax + αβ pruning)  
-- **Move history** panel and undo support  
-- **Clean folder structure**: `ai/`, `board/`, `logic/`, `pieces/`, `utils/`  
-- **Easy build** via CMake  
+- **Interactive ASCII GUI** using NCurses
+- **AI opponent** with configurable search depth (minimax + αβ pruning)
+- **Move history** panel and undo support
+- **Clean folder structure**: `ai/`, `board/`, `logic/`, `pieces/`, `utils/`
+- **Easy build** via CMake
 
 ---
 
 ## Controls
 
-- **Mouse**  
-  - Click on a piece to select it  
-  - Click on a destination square to move  
+- **Mouse**
+  - Click on a piece to select it
+  - Click on a destination square to move
 
 ---
 

@@ -13,36 +13,19 @@ public:
     > movesDictionary = buildMovesDictionary();
 
     // Constructor for base fields
-    PIECE(PIECE_TYPE t, COLOR c, POSITION pos)
-        : type(t), color(c), position(pos){
-    }
+    PIECE(PIECE_TYPE t, COLOR c, POSITION pos);
 
     // Virtual destructor (important for base classes)
     virtual ~PIECE() = default;
 
     // Get piece type as string, e.g. "PAWN", "ROOK"
-    std::string getTypeAsString() const {
-        switch (type) {
-            case PIECE_TYPE::PAWN:   return "PAWN";
-            case PIECE_TYPE::ROOK:   return "ROOK";
-            case PIECE_TYPE::KNIGHT: return "KNIGHT";
-            case PIECE_TYPE::BISHOP: return "BISHOP";
-            case PIECE_TYPE::QUEEN:  return "QUEEN";
-            case PIECE_TYPE::KING:   return "KING";
-            case PIECE_TYPE::EMPTY:  return "EMPTY";
-            default:                 return "UNKNOWN";
-        }
-    }
+    std::string getTypeAsString() const;
 
     // Get piece color as string, e.g. "WHITE", "BLACK"
-    std::string getColorAsString() const {
-        return (color == COLOR::WHITE) ? "WHITE" : "BLACK";
-    }
+    std::string getColorAsString() const;
 
     // Get piece position as string, e.g. "e4"
-    std::string getPositionAsString() const {
-        return position.toAlgebraicNotation();
-    }
+    std::string getPositionAsString() const;
 
     // Abstract methods for directional valid moves
     virtual std::vector<MOVE> getUpMoves(const POSITION& from) const = 0;

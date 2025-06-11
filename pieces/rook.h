@@ -1,8 +1,9 @@
 #pragma once
 #include "piece.h"
-class BISHOP : public PIECE {
+
+class ROOK : public PIECE {
 public:
-    BISHOP(POSITION pos, COLOR col) : PIECE(PIECE_TYPE::BISHOP, col, pos) {}
+    ROOK(POSITION pos, COLOR col) : PIECE(PIECE_TYPE::ROOK, col, pos) {}
 
     std::vector<MOVE> getUpMoves(const POSITION& from) const override {
         return {};

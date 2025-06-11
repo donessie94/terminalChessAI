@@ -1,5 +1,11 @@
 #pragma once
 #include "../pieces/piece.h"
+#include "../pieces/pawn.h"
+#include "../pieces/rook.h"
+#include "../pieces/knight.h"
+#include "../pieces/bishop.h"
+#include "../pieces/queen.h"
+#include "../pieces/king.h"
 
 class CHESS {
 public:
@@ -8,23 +14,11 @@ public:
     COLOR currentPlayer; // Current player (WHITE or BLACK)
     int turnCount; // Number of turns played
 
-    CHESS() {
-        currentPlayer = COLOR::WHITE; // Start with white player
-        turnCount = 0; // Initialize turn count
-    }
+    CHESS();
 
-    void changeTurn() {
-        currentPlayer = (currentPlayer == COLOR::WHITE) ? COLOR::BLACK : COLOR::WHITE;
-        turnCount++;
-        computeNewValidMoves(); // Recompute valid moves for the new player
-    }
+    void changeTurn();
 
-    void movePiece(MOVE move) {
+    void movePiece(MOVE move);
 
-    }
-
-    void computeNewValidMoves() {
-        validMoves.clear(); // Clear valid moves for the new turn
-
-    }
+    void computeNewValidMoves();
 };
