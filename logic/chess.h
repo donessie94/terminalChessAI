@@ -13,10 +13,14 @@ public:
     std::vector<MOVE> validMoves; // Valid moves for the current player
     COLOR currentPlayer; // Current player (WHITE or BLACK)
     int turnCount; // Number of turns played
+    POSITION wKingPosition;
+    POSITION bKingPosition;
 
     CHESS();
 
     void changeTurn();
+
+    void updateKingPosition();
 
     void movePiece(MOVE move);
 

@@ -12,29 +12,6 @@ std::vector<PIECE_TYPE> allPieceTypes()
     };
 }
 
-std::vector<DIRECTION> allDirections(PIECE_TYPE pt)
-{
-    switch (pt) {
-        case PIECE_TYPE::PAWN:
-            return {DIRECTION::UP, DIRECTION::UP_LEFT, DIRECTION::UP_RIGHT,
-                    DIRECTION::DOWN, DIRECTION::DOWN_LEFT, DIRECTION::DOWN_RIGHT};
-        case PIECE_TYPE::ROOK:
-            return {DIRECTION::UP, DIRECTION::DOWN, DIRECTION::LEFT, DIRECTION::RIGHT};
-        case PIECE_TYPE::KNIGHT:
-            return {DIRECTION::UP_LEFT, DIRECTION::UP_RIGHT, DIRECTION::DOWN_LEFT, DIRECTION::DOWN_RIGHT};
-        case PIECE_TYPE::BISHOP:
-            return {DIRECTION::UP_LEFT, DIRECTION::UP_RIGHT, DIRECTION::DOWN_LEFT, DIRECTION::DOWN_RIGHT};
-        case PIECE_TYPE::QUEEN:
-            return {DIRECTION::UP, DIRECTION::DOWN, DIRECTION::LEFT, DIRECTION::RIGHT,
-                    DIRECTION::UP_LEFT, DIRECTION::UP_RIGHT, DIRECTION::DOWN_LEFT, DIRECTION::DOWN_RIGHT};
-        case PIECE_TYPE::KING:
-            return {DIRECTION::UP, DIRECTION::DOWN, DIRECTION::LEFT, DIRECTION::RIGHT,
-                    DIRECTION::UP_LEFT, DIRECTION::UP_RIGHT, DIRECTION::DOWN_LEFT, DIRECTION::DOWN_RIGHT};
-        default:
-            return {};
-    }
-}
-
 std::unordered_map<int, std::pair<int, char>> buildPosToNotation()
 {
     std::unordered_map<int, std::pair<int,char>> dict;
@@ -82,11 +59,11 @@ POSITION::POSITION(int pos) { setPosition(pos); }
 
 std::string POSITION::toAlgebraicNotation() const { return std::string{file} + std::to_string(rank); }
 
-MOVE::MOVE(DIRECTION dir, POSITION fromPos, POSITION toPos, PIECE_TYPE pt,
+MOVE::MOVE( POSITION fromPos, POSITION toPos, PIECE_TYPE pt,
         COLOR color, bool capture, PIECE_TYPE capturedType,
         bool promotion, PIECE_TYPE promoType,
         bool check, bool checkmate)
-        : direction(dir), from(fromPos), to(toPos), pieceType(pt),
+        : from(fromPos), to(toPos), pieceType(pt),
           pieceColor(color), isCapture(capture), capturedPieceType(capturedType),
           isPromotion(promotion), promotionType(promoType),
           isCheck(check), isCheckmate(checkmate) {}

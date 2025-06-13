@@ -1,5 +1,8 @@
 #pragma once
-#include "../utils/moveHelpers.h"
+#include "../utils/miscellanous.h"
+
+// Forward declaration of CHESS:
+class CHESS;
 
 class PIECE {
 public:
@@ -7,10 +10,10 @@ public:
     COLOR       color;    // WHITE or BLACK
     POSITION    position; // 0..63 on the board
 
-    // Dictionary for moves (empty board)
-    inline static const std::unordered_map<PIECE_TYPE,
-                        std::unordered_map<DIRECTION, std::vector<MOVE>>
-    > movesDictionary = buildMovesDictionary();
+    // 2d table of precomputed raw moves for all pieces
+    inline static std::array<std::array<std::vector<MOVE>, 64>, 6> rawMoveTable;
+    static int pieceTypeToIndex(PIECE_TYPE pt);
+    static void buildRawMoveTable();
 
     // Constructor for base fields
     PIECE(PIECE_TYPE t, COLOR c, POSITION pos);
@@ -28,12 +31,5 @@ public:
     std::string getPositionAsString() const;
 
     // Abstract methods for directional valid moves
-    virtual std::vector<MOVE> getUpMoves(const POSITION& from) const = 0;
-    virtual std::vector<MOVE> getDownMoves(const POSITION& from) const = 0;
-    virtual std::vector<MOVE> getLeftMoves(const POSITION& from) const = 0;
-    virtual std::vector<MOVE> getRightMoves(const POSITION& from) const = 0;
-    virtual std::vector<MOVE> getUpLeftMoves(const POSITION& from) const = 0;
-    virtual std::vector<MOVE> getUpRightMoves(const POSITION& from) const = 0;
-    virtual std::vector<MOVE> getDownLeftMoves(const POSITION& from) const = 0;
-    virtual std::vector<MOVE> getDownRightMoves(const POSITION& from) const = 0;
+    virtual std::vector<MOVE> getValidMoves(const POSITION& from, const CHESS& state) const = 0;
 };

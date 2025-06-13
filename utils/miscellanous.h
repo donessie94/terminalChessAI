@@ -20,13 +20,8 @@ enum class COLOR { WHITE, BLACK };
 // Piece type enum for different chess pieces (if you need it later)
 enum class PIECE_TYPE { PAWN, ROOK, KNIGHT, BISHOP, QUEEN, KING, EMPTY };
 
-// Direction enum for move directions
-enum class DIRECTION { UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT };
-
 // Return {PAWN, ROOK, …, KING}
 std::vector<PIECE_TYPE> allPieceTypes();
-
-std::vector<DIRECTION> allDirections(PIECE_TYPE pt);
 
 // ----------------------------------------------------------------
 // Helper: build a map from [0..63] → (rank, fileLetter) in “a1→0, b1→1, …, h8→63” order
@@ -59,7 +54,6 @@ public:
 
 class MOVE {
 public:
-    DIRECTION direction; // Direction of the move (UP, DOWN, etc.)
     POSITION from; // Starting position of the move
     POSITION to; // Ending position of the move
     PIECE_TYPE pieceType; // Type of the piece being moved
@@ -73,7 +67,7 @@ public:
     bool isCheckmate; // Whether the move results in checkmate
 
     // Constructor to initialize a move
-    MOVE(DIRECTION dir, POSITION fromPos, POSITION toPos, PIECE_TYPE pt,
+    MOVE(POSITION fromPos, POSITION toPos, PIECE_TYPE pt,
         COLOR color = COLOR::WHITE, bool capture = false, PIECE_TYPE capturedType = PIECE_TYPE::EMPTY,
         bool promotion = false, PIECE_TYPE promoType = PIECE_TYPE::EMPTY,
         bool check = false, bool checkmate = false);

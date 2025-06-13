@@ -6,7 +6,7 @@ void CHESS::changeTurn(){
     computeNewValidMoves(); // Recompute valid moves for the new player
 }
 
-CHESS::CHESS() :  board(64) {
+CHESS::CHESS() :  board(64), wKingPosition(4), bKingPosition(60) {
     currentPlayer = COLOR::WHITE;
     turnCount     = 0;
 
@@ -58,4 +58,5 @@ void CHESS::movePiece(MOVE move)
 
 void CHESS::computeNewValidMoves()
 {
+  
 }
