@@ -159,6 +159,23 @@ void EFFECTS::playBackground(int loops)
 
 void EFFECTS::stopBackground() { Mix_HaltMusic(); }
 
+void EFFECTS::setBackgroundVolumePercent(int percent)
+{
+    if (!s_initialized) return;
+    int vol = (percent * MIX_MAX_VOLUME) / 100;
+    Mix_VolumeMusic(vol);
+}
+
+void EFFECTS::setEffectsVolumePercent(int percent)
+{
+    if (!s_initialized) return;
+    int vol = (percent * MIX_MAX_VOLUME) / 100;
+    if (s_moveSound)    Mix_VolumeChunk(s_moveSound, vol);
+    if (s_captureSound) Mix_VolumeChunk(s_captureSound, vol);
+    if (s_invalidSound) Mix_VolumeChunk(s_invalidSound, vol);
+    if (s_checkSound)   Mix_VolumeChunk(s_checkSound, vol);
+}
+
 void EFFECTS::cleanup() {
     if (s_bgMusic) {
         Mix_HaltMusic();

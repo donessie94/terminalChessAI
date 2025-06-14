@@ -40,6 +40,10 @@ public:
 
     static void stopBackground();
 
+    static void setBackgroundVolumePercent(int percent);
+
+    static void setEffectsVolumePercent(int percent);
+
     /// Frees loaded Mix_Chunk and closes audio.
     static void cleanup();
 

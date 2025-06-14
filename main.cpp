@@ -24,7 +24,8 @@ int main(int argc, char* argv[])
                         "assets/sounds/background.wav");
 
     EFFECTS::playBackground(-1); // loop forever
-    
+    EFFECTS::setBackgroundVolumePercent(15);
+
     // Build raw move table once at startup
     PIECE::buildRawMoveTable();
 
