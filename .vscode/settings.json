@@ -42,6 +42,8 @@
         "variant": "cpp",
         "deque": "cpp",
         "stack": "cpp",
-        "algorithm": "cpp"
+        "algorithm": "cpp",
+        "chrono": "cpp",
+        "functional": "cpp"
     }
 }

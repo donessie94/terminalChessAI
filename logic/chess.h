@@ -6,6 +6,7 @@
 #include "../pieces/bishop.h"
 #include "../pieces/queen.h"
 #include "../pieces/king.h"
+#include <SDL2/SDL.h>
 
 class CHESS {
 public:
@@ -35,7 +36,7 @@ public:
 
     void updateKingPosition();
 
-    void movePiece(MOVE move);
+    bool movePiece(const MOVE& move);
 
     void computeNewValidMoves();
 };

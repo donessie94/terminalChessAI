@@ -1,6 +1,9 @@
 #include "graphic.h"
 
-void GRAPHICS::getHighlightIndex(int index) { highLightIndex = index; }
+void GRAPHICS::getHighlightIndex(int index) {
+    highLightIndex = index;
+    moveFlag = !moveFlag;
+}
 
 GRAPHICS::~GRAPHICS() {
     if(renderer) {SDL_DestroyRenderer(renderer);}
@@ -23,6 +26,7 @@ GRAPHICS::~GRAPHICS() {
 }
 
 bool GRAPHICS::init(const char* windowTitle, int w, int h) {
+    moveFlag = false;
     highLightIndex = -1;
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -666,6 +670,7 @@ void GRAPHICS::drawPieces(const CHESS& state) {
 void GRAPHICS::drawPieceHighLight() {
     // If no square is selected, do nothing
     if (highLightIndex < 0 || highLightIndex >= 64) {
+        moveFlag = false;
         return;
     }
     // Compute fileIndex (0..7) and rankIndex0 (0..7) from selectedSquareIndex
@@ -708,16 +713,111 @@ void GRAPHICS::drawPieceHighLight() {
     }
 }
 
-// void GRAPHICS::drawMoveHint(const CHESS& state)
-// {
-//     // If no square is selected, do nothing
-//     if (highLightIndex < 0 || highLightIndex >= 64) {
-//         return;
-//     }
-//     for(auto dir : DIRECTION direction){
+void GRAPHICS::drawFilledCircle(int cx, int cy, int radius) {
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 128, 128, 128, 192);
+    for (int dy = -radius; dy <= radius; ++dy) {
+        int y = cy + dy;
+        int dx = static_cast<int>(std::sqrt(radius*(double)radius - dy*(double)dy));
+        int x1 = cx - dx;
+        int x2 = cx + dx;
+        SDL_RenderDrawLine(renderer, x1, y, x2, y);
+    }
+}
 
-//     }
-// }
+void GRAPHICS::drawCircleOutline(int cx, int cy, int radius) {
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
+    int x = radius;
+    int y = 0;
+    int err = 0;
+    while (x >= y) {
+        SDL_RenderDrawPoint(renderer, cx + x, cy + y);
+        SDL_RenderDrawPoint(renderer, cx + y, cy + x);
+        SDL_RenderDrawPoint(renderer, cx - y, cy + x);
+        SDL_RenderDrawPoint(renderer, cx - x, cy + y);
+        SDL_RenderDrawPoint(renderer, cx - x, cy - y);
+        SDL_RenderDrawPoint(renderer, cx - y, cy - x);
+        SDL_RenderDrawPoint(renderer, cx + y, cy - x);
+        SDL_RenderDrawPoint(renderer, cx + x, cy - y);
+
+        y++;
+        if (err <= 0) {
+            err += 2*y + 1;
+        } else {
+            x--;
+            err -= 2*x + 1;
+        }
+    }
+}
+
+void GRAPHICS::drawMoveHint(const CHESS& state)
+{
+    if (highLightIndex < 0 || highLightIndex >= 64) return;
+    auto &piecePtr = state.board[highLightIndex];
+    if (!piecePtr) return;
+
+    // Gather legal moves:
+    std::vector<MOVE> legalMoves;
+    legalMoves.reserve(
+        piecePtr->movesCheck.size() +
+        piecePtr->movesCapture.size() +
+        piecePtr->movesDevelopment.size() +
+        piecePtr->movesQuiet.size()
+    );
+    for (auto &m : piecePtr->movesCheck)       legalMoves.push_back(m);
+    for (auto &m : piecePtr->movesCapture)     legalMoves.push_back(m);
+    for (auto &m : piecePtr->movesDevelopment) legalMoves.push_back(m);
+    for (auto &m : piecePtr->movesQuiet)       legalMoves.push_back(m);
+    if (legalMoves.empty()) return;
+
+    // Pre-calc radii once:
+    int minDim = std::min(SQUARE_WIDTH, SQUARE_HEIGHT);
+    int smallRadius   = minDim / 6;
+    int outlineRadius = minDim / 2 - 4;
+    if (outlineRadius < smallRadius + 2) {
+        // ensure outline bigger than small circle
+        outlineRadius = smallRadius + 2;
+    }
+
+    // For clarity, separate lists: quiet vs capture, so we can draw quiet hints below pieces or above as desired.
+    std::vector<std::pair<int,bool>> dests; // pair<toIdx, isCapture>
+    dests.reserve(legalMoves.size());
+    for (auto &m : legalMoves) {
+        int toIdx = m.to.index;
+        if (toIdx < 0 || toIdx >= 64) continue;
+        bool isCap = (state.board[toIdx] != nullptr &&
+                      state.board[toIdx]->color != piecePtr->color);
+        dests.emplace_back(toIdx, isCap);
+    }
+
+    // Now draw. If we want filled hints under pieces and outlines over pieces:
+    //  1) draw quiet (filled) hints
+    //  2) draw pieces
+    //  3) draw capture (outline) hints
+    // In this function we only draw hints; assume caller handles ordering.
+    //
+    // Here, if we call drawMoveHint before drawing pieces, both filled and outline appear under pieces.
+    // If we call after drawing pieces, both appear over pieces.
+    // To draw filled under and outline over, we'd split calls or have flags. For now, we draw both over:
+    for (auto &p : dests) {
+        int toIdx = p.first;
+        bool isCap = p.second;
+        int file = toIdx % 8;
+        int rank = toIdx / 8;
+        // Top-left of square content area:
+        int x = BOARD_START_W + file * (SQUARE_WIDTH + LINE_SIZE) + LINE_SIZE;
+        int y = BOARD_START_H + (7 - rank) * (SQUARE_HEIGHT + LINE_SIZE) + LINE_SIZE;
+        int cx = x + SQUARE_WIDTH / 2;
+        int cy = y + SQUARE_HEIGHT / 2;
+
+        if (isCap) {
+            drawCircleOutline(cx, cy, outlineRadius);
+        } else {
+            drawFilledCircle(cx, cy, smallRadius);
+        }
+    }
+}
 
 void GRAPHICS::clear(const CHESS &state)
 {
@@ -732,7 +832,7 @@ void GRAPHICS::clear(const CHESS &state)
     drawFaces();
     drawPieces(state);
     drawPieceHighLight();
-    //drawMoveHint(state);
+    drawMoveHint(state);
 
     SDL_RenderPresent(renderer);
 }

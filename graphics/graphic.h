@@ -3,6 +3,7 @@
 #include <SDL2/SDL_image.h>
 #include <stdexcept>
 #include "../logic/chess.h"
+#include <cmath> // for std::sqrt
 
 class GRAPHICS {
 public:
@@ -38,6 +39,7 @@ public:
     static constexpr Uint32 THINK_FRAME_DURATION = 1800; // ms per frame
 
     int highLightIndex;
+    bool moveFlag;
 
     GRAPHICS() = default;
     ~GRAPHICS();
@@ -48,6 +50,8 @@ public:
     void drawPieces(const CHESS& state);
     void drawPieceHighLight();
     void drawMoveHint(const CHESS& state);
+    void drawFilledCircle(int cx, int cy, int radius);
+    void drawCircleOutline(int cx, int cy, int radius);
 
     // Return true on success, false on any init error:
     bool init(const char* windowTitle, int w, int h);

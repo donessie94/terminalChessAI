@@ -5,7 +5,7 @@
 #include <utility>   // for std::pair
 #include <stdexcept>
 
-constexpr int SQUARE_SIZE  = 90; // Size of each square in pixels
+constexpr int SQUARE_SIZE  = 93; // Size of each square in pixels
 constexpr int SQUARE_WIDTH = 94;
 constexpr int SQUARE_HEIGHT = 93;
 constexpr int LINE_SIZE = 4;
