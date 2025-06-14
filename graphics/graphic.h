@@ -51,7 +51,13 @@ public:
     void drawPieceHighLight();
     void drawMoveHint(const CHESS& state);
     void drawFilledCircle(int cx, int cy, int radius);
-    void drawCircleOutline(int cx, int cy, int radius);
+    void drawCircleOutline(int cx, int cy, int radius, int thickness);
+    
+    // Animate a move from 'fromIdx' to 'toIdx' for the given state:
+    //   - state: current board state before move
+    //   - fromIdx, toIdx: 0..63 indices of source/destination squares
+    //   - durationMs: total duration in milliseconds for the animation
+    void animateMove(const CHESS& state, int fromIdx, int toIdx, int durationMs = 300);
 
     // Return true on success, false on any init error:
     bool init(const char* windowTitle, int w, int h);

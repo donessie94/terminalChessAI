@@ -1,11 +1,27 @@
 #include "graphics/graphic.h"
 #include "inputHandler/inputHandler.h"
+#include "sounds/effects.h"
 
 constexpr int SCREEN_WIDTH  = 1024; // Width of the window in pixels
 constexpr int SCREEN_HEIGHT = 1024; // Height of the window in pixels
 
 int main(int argc, char* argv[])
 {
+    //audio initialization
+    if (SDL_Init(SDL_INIT_AUDIO) != 0) {
+        SDL_Log("SDL_Init error: %s", SDL_GetError());
+        return 1;
+    }
+    if (!EFFECTS::initAudio()) {
+        SDL_Log("Audio init failed, continuing without sound.");
+    }
+
+    // Load your sound files (paths relative to executable working dir or absolute):
+    EFFECTS::loadSounds("assets/sounds/move.wav",
+                        "assets/sounds/capture.wav",
+                        "assets/sounds/errorMove.wav",
+                        "assets/sounds/check_alert.wav");
+
     // Build raw move table once at startup
     PIECE::buildRawMoveTable();
 
@@ -56,15 +72,23 @@ int main(int argc, char* argv[])
                         move.from.index, move.to.index,
                         (chess.currentPlayer==COLOR::WHITE?"WHITE":"BLACK"));
 
+                bool capture = (chess.board[toP.index] ? true : false);
+
+                gfx.animateMove(chess, fromP.index, toP.index, 200);
                 bool ok = chess.movePiece(move);
                 if (ok) {
                     SDL_Log("Main: movePiece succeeded");
+
+                    //capture or move sound
+                    (capture ? EFFECTS::playCapture() : EFFECTS::playMove());
+
                     // After movePiece, turn has been advanced and valid moves recomputed internally
                     selectedSquare = -1; // clear selection
                 } else {
                     SDL_Log("Main: movePiece rejected the move");
+                    EFFECTS::playInvalid();
                     // Keep selection so user can try another destination if desired:
-                    // selectedSquare remains unchanged.
+                    selectedSquare = -1; //actually lets clear the selection (it feels better)
                 }
             }
             // CASE C: Click on empty square or opponent piece while no piece selected -> do nothing
@@ -85,5 +109,6 @@ int main(int argc, char* argv[])
         // (Optional) cap framerate, e.g. SDL_Delay(16);
     }
 
+    EFFECTS::cleanup();
     return 0;
 }

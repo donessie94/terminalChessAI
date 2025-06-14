@@ -1,5 +1,18 @@
 #include "graphic.h"
 
+// Computes the top-left pixel coordinate of square index [0..63],
+// accounting for BOARD_START offsets, square size, and line thickness.
+// - squareIdx: 0..63, where 0=a1, 1=b1, ..., 7=h1, 8=a2, ..., 63=h8.
+// - outX, outY: filled with pixel coordinates where the piece-drawing destRect should start.
+static void computeSquareTopLeft(int squareIdx, int& outX, int& outY) {
+    int file = squareIdx % 8;   // 0..7 for a..h
+    int rank = squareIdx / 8;   // 0..7 for rank1..rank8
+    // X: start + file * (square width + line thickness)
+    outX = BOARD_START_W + file * (SQUARE_WIDTH + LINE_SIZE);
+    // Y: invert rank so rank=0 (a1) is bottom, rank=7 (a8) is top
+    outY = BOARD_START_H + (7 - rank) * (SQUARE_HEIGHT + LINE_SIZE);
+}
+
 void GRAPHICS::getHighlightIndex(int index) {
     highLightIndex = index;
     moveFlag = !moveFlag;
@@ -25,7 +38,8 @@ GRAPHICS::~GRAPHICS() {
     SDL_Quit();
 }
 
-bool GRAPHICS::init(const char* windowTitle, int w, int h) {
+bool GRAPHICS::init(const char *windowTitle, int w, int h)
+{
     moveFlag = false;
     highLightIndex = -1;
 
@@ -725,28 +739,38 @@ void GRAPHICS::drawFilledCircle(int cx, int cy, int radius) {
     }
 }
 
-void GRAPHICS::drawCircleOutline(int cx, int cy, int radius) {
+void GRAPHICS::drawCircleOutline(int cx, int cy, int radius, int thickness) {
+    if (thickness <= 0) return;
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
-    int x = radius;
-    int y = 0;
-    int err = 0;
-    while (x >= y) {
-        SDL_RenderDrawPoint(renderer, cx + x, cy + y);
-        SDL_RenderDrawPoint(renderer, cx + y, cy + x);
-        SDL_RenderDrawPoint(renderer, cx - y, cy + x);
-        SDL_RenderDrawPoint(renderer, cx - x, cy + y);
-        SDL_RenderDrawPoint(renderer, cx - x, cy - y);
-        SDL_RenderDrawPoint(renderer, cx - y, cy - x);
-        SDL_RenderDrawPoint(renderer, cx + y, cy - x);
-        SDL_RenderDrawPoint(renderer, cx + x, cy - y);
 
-        y++;
-        if (err <= 0) {
-            err += 2*y + 1;
-        } else {
-            x--;
-            err -= 2*x + 1;
+    // For each “layer” of thickness, draw a 1-pixel circle with radius = baseRadius - offset
+    for (int w = 0; w < thickness; ++w) {
+        int r = radius - w;
+        if (r <= 0) break;
+
+        // Midpoint circle algorithm for radius r:
+        int x = r;
+        int y = 0;
+        int err = 0;
+        while (x >= y) {
+            // Draw the eight symmetric points:
+            SDL_RenderDrawPoint(renderer, cx + x, cy + y);
+            SDL_RenderDrawPoint(renderer, cx + y, cy + x);
+            SDL_RenderDrawPoint(renderer, cx - y, cy + x);
+            SDL_RenderDrawPoint(renderer, cx - x, cy + y);
+            SDL_RenderDrawPoint(renderer, cx - x, cy - y);
+            SDL_RenderDrawPoint(renderer, cx - y, cy - x);
+            SDL_RenderDrawPoint(renderer, cx + y, cy - x);
+            SDL_RenderDrawPoint(renderer, cx + x, cy - y);
+
+            y++;
+            if (err <= 0) {
+                err += 2*y + 1;
+            } else {
+                x--;
+                err -= 2*x + 1;
+            }
         }
     }
 }
@@ -812,7 +836,7 @@ void GRAPHICS::drawMoveHint(const CHESS& state)
         int cy = y + SQUARE_HEIGHT / 2;
 
         if (isCap) {
-            drawCircleOutline(cx, cy, outlineRadius);
+            drawCircleOutline(cx, cy, outlineRadius, 8);
         } else {
             drawFilledCircle(cx, cy, smallRadius);
         }
@@ -837,6 +861,132 @@ void GRAPHICS::clear(const CHESS &state)
     SDL_RenderPresent(renderer);
 }
 
+void GRAPHICS::animateMove(const CHESS& state, int fromIdx, int toIdx, int durationMs) {
+    if (fromIdx < 0 || fromIdx >= 64 || toIdx < 0 || toIdx >= 64) {
+        return;
+    }
+    // 1) Get the moving piece pointer:
+    const auto& piecePtr = state.board[fromIdx];
+    if (!piecePtr) return;
 
+    // 2) Select the correct texture for this piece:
+    SDL_Texture* moveTex = nullptr;
+    switch (piecePtr->type) {
+        case PIECE_TYPE::PAWN:
+            moveTex = (piecePtr->color == COLOR::WHITE) ? whitePawnTexture : blackPawnTexture;
+            break;
+        case PIECE_TYPE::ROOK:
+            moveTex = (piecePtr->color == COLOR::WHITE) ? whiteRookTexture : blackRookTexture;
+            break;
+        case PIECE_TYPE::KNIGHT:
+            moveTex = (piecePtr->color == COLOR::WHITE) ? whiteKnightTexture : blackKnightTexture;
+            break;
+        case PIECE_TYPE::BISHOP:
+            moveTex = (piecePtr->color == COLOR::WHITE) ? whiteBishopTexture : blackBishopTexture;
+            break;
+        case PIECE_TYPE::QUEEN:
+            moveTex = (piecePtr->color == COLOR::WHITE) ? whiteQueenTexture : blackQueenTexture;
+            break;
+        case PIECE_TYPE::KING:
+            moveTex = (piecePtr->color == COLOR::WHITE) ? whiteKingTexture : blackKingTexture;
+            break;
+    }
+    if (!moveTex) return;
 
+    // 3) Compute start & end top-left coordinates of the squares:
+    int startX, startY, endX, endY;
+    computeSquareTopLeft(fromIdx, startX, startY);
+    computeSquareTopLeft(toIdx,   endX,   endY);
 
+    // 4) Prepare scaling:
+    const float scale = 1.1f;
+    const int baseW = SQUARE_WIDTH;
+    const int baseH = SQUARE_HEIGHT;
+    const int scaledW = int(baseW * scale);
+    const int scaledH = int(baseH * scale);
+    // Offsets so that scaled piece is centered in the square:
+    const int offsetX = (scaledW - baseW) / 2;
+    const int offsetY = (scaledH - baseH) / 2;
+
+    // 5) Animation timing:
+    const int fps = 60;
+    const int frameDelayMs = 1000 / fps;
+    int frames = (durationMs + frameDelayMs - 1) / frameDelayMs;
+    if (frames < 1) frames = 1;
+    Uint32 startTime = SDL_GetTicks();
+
+    // 6) Animation loop:
+    for (;;) {
+        Uint32 now = SDL_GetTicks();
+        float elapsed = float(now - startTime);
+        float t = elapsed / float(durationMs);
+        if (t > 1.0f) t = 1.0f;
+
+        // Interpolated top-left of moving piece’s square:
+        float curXf = startX + (endX - startX) * t;
+        float curYf = startY + (endY - startY) * t;
+        int curX = int(curXf + 0.5f);
+        int curY = int(curYf + 0.5f);
+
+        // 7) Draw board background:
+        SDL_RenderClear(renderer);
+        SDL_RenderCopy(renderer, boardTexture, nullptr, nullptr);
+
+        // 8) Draw all other pieces at their normal (scaled) positions:
+        for (int idx = 0; idx < 64; ++idx) {
+            if (idx == fromIdx) continue; // skip the moving piece at origin
+            const auto& opPtr = state.board[idx];
+            if (!opPtr) continue;
+            SDL_Texture* tex = nullptr;
+            switch (opPtr->type) {
+                case PIECE_TYPE::PAWN:
+                    tex = (opPtr->color == COLOR::WHITE) ? whitePawnTexture : blackPawnTexture;
+                    break;
+                case PIECE_TYPE::ROOK:
+                    tex = (opPtr->color == COLOR::WHITE) ? whiteRookTexture : blackRookTexture;
+                    break;
+                case PIECE_TYPE::KNIGHT:
+                    tex = (opPtr->color == COLOR::WHITE) ? whiteKnightTexture : blackKnightTexture;
+                    break;
+                case PIECE_TYPE::BISHOP:
+                    tex = (opPtr->color == COLOR::WHITE) ? whiteBishopTexture : blackBishopTexture;
+                    break;
+                case PIECE_TYPE::QUEEN:
+                    tex = (opPtr->color == COLOR::WHITE) ? whiteQueenTexture : blackQueenTexture;
+                    break;
+                case PIECE_TYPE::KING:
+                    tex = (opPtr->color == COLOR::WHITE) ? whiteKingTexture : blackKingTexture;
+                    break;
+                default:
+                    continue;
+            }
+            if (!tex) continue;
+            int px, py;
+            computeSquareTopLeft(idx, px, py);
+            // Center scaled piece in the square:
+            SDL_Rect destRect = { px - offsetX, py - offsetY, scaledW, scaledH };
+            SDL_SetTextureColorMod(tex, 255,255,255);
+            SDL_SetTextureAlphaMod(tex, 255);
+            SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+            SDL_RenderCopy(renderer, tex, nullptr, &destRect);
+        }
+
+        // 9) Draw the moving piece at interpolated (curX, curY), scaled+centered:
+        SDL_Rect movingDest = { curX - offsetX, curY - offsetY, scaledW, scaledH };
+        SDL_SetTextureColorMod(moveTex, 255,255,255);
+        SDL_SetTextureAlphaMod(moveTex, 255);
+        SDL_SetTextureBlendMode(moveTex, SDL_BLENDMODE_BLEND);
+        SDL_RenderCopy(renderer, moveTex, nullptr, &movingDest);
+
+        // 10) Present:
+        SDL_RenderPresent(renderer);
+
+        // 11) Break if done:
+        if (t >= 1.0f) break;
+
+        // 12) Delay until next frame:
+        SDL_Delay(frameDelayMs);
+    }
+
+    // After this returns, caller should call chess.movePiece(...) to finalize the move in the model.
+}
