@@ -23,7 +23,8 @@ public:
     static bool loadSounds(const std::string& moveSoundPath,
                            const std::string& captureSoundPath,
                            const std::string& invalidSoundPath,
-                           const std::string& checkSoundPath);
+                           const std::string& checkSoundPath,
+                           const std::string& loopPath);
 
     /// Play the “move” sound effect once (on first free channel). If not loaded, does nothing.
     static void playMove();
@@ -34,6 +35,10 @@ public:
     static void playInvalid();
 
     static void playCheck();
+
+    static void playBackground(int loops = -1);
+
+    static void stopBackground();
 
     /// Frees loaded Mix_Chunk and closes audio.
     static void cleanup();
@@ -47,5 +52,6 @@ private:
     static Mix_Chunk* s_captureSound;
     static Mix_Chunk* s_invalidSound;
     static Mix_Chunk* s_checkSound;
+    static Mix_Music* s_bgMusic;
     static bool s_initialized;
 };

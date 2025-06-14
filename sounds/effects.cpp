@@ -6,6 +6,7 @@ Mix_Chunk* EFFECTS::s_moveSound = nullptr;
 Mix_Chunk* EFFECTS::s_invalidSound = nullptr;
 Mix_Chunk* EFFECTS::s_captureSound = nullptr;
 Mix_Chunk* EFFECTS::s_checkSound = nullptr;
+Mix_Music* EFFECTS::s_bgMusic = nullptr;
 bool EFFECTS::s_initialized = false;
 
 bool EFFECTS::initAudio(int frequency, Uint16 format, int channels, int chunksize) {
@@ -28,7 +29,8 @@ bool EFFECTS::initAudio(int frequency, Uint16 format, int channels, int chunksiz
 bool EFFECTS::loadSounds(   const std::string& moveSoundPath,
                             const std::string& captureSoundPath,
                             const std::string& invalidSoundPath,
-                            const std::string& checkSoundPath)
+                            const std::string& checkSoundPath,
+                            const std::string& bgmPath)
 {
     bool anyLoaded = false;
 
@@ -48,6 +50,10 @@ bool EFFECTS::loadSounds(   const std::string& moveSoundPath,
     if (s_checkSound) {
         Mix_FreeChunk(s_checkSound);
         s_checkSound = nullptr;
+    }
+    if (s_bgMusic) {
+            Mix_FreeMusic(s_bgMusic);
+            s_bgMusic = nullptr;
     }
 
     if (!moveSoundPath.empty()) {
@@ -85,6 +91,12 @@ bool EFFECTS::loadSounds(   const std::string& moveSoundPath,
         } else {
             anyLoaded = true;
         }
+    }
+    s_bgMusic = Mix_LoadMUS(bgmPath.c_str());
+    if (!s_bgMusic) {
+        SDL_Log("Effects::loadBackgroundMusic failed: %s", Mix_GetError());
+    } else {
+        anyLoaded = true;
     }
 
     return anyLoaded;
@@ -132,23 +144,32 @@ void EFFECTS::playCheck()
     }
 }
 
+void EFFECTS::playBackground(int loops)
+{
+    if (!s_initialized) {
+        SDL_Log("Effects::playBackground called before initAudio()");
+        return;
+    }
+    if (s_bgMusic) {
+        if (Mix_PlayMusic(s_bgMusic, loops) < 0) {
+            SDL_Log("Mix_PlayMusic failed: %s", Mix_GetError());
+        }
+    }
+}
+
+void EFFECTS::stopBackground() { Mix_HaltMusic(); }
+
 void EFFECTS::cleanup() {
-    if (s_moveSound) {
-        Mix_FreeChunk(s_moveSound);
-        s_moveSound = nullptr;
+    if (s_bgMusic) {
+        Mix_HaltMusic();
+        Mix_FreeMusic(s_bgMusic);
+        s_bgMusic = nullptr;
     }
-    if (s_captureSound) {
-        Mix_FreeChunk(s_captureSound);
-        s_captureSound = nullptr;
-    }
-    if (s_invalidSound) {
-        Mix_FreeChunk(s_invalidSound);
-        s_invalidSound = nullptr;
-    }
-    if (s_checkSound) {
-        Mix_FreeChunk(s_checkSound);
-        s_checkSound = nullptr;
-    }
+    // free chunks...
+    if (s_moveSound) { Mix_FreeChunk(s_moveSound); s_moveSound = nullptr; }
+    if (s_captureSound) { Mix_FreeChunk(s_captureSound); s_captureSound = nullptr; }
+    if (s_invalidSound) { Mix_FreeChunk(s_invalidSound); s_invalidSound = nullptr; }
+    if (s_checkSound) { Mix_FreeChunk(s_checkSound); s_checkSound = nullptr; }
     if (s_initialized) {
         Mix_CloseAudio();
         Mix_Quit();

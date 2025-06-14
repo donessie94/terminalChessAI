@@ -20,8 +20,11 @@ int main(int argc, char* argv[])
     EFFECTS::loadSounds("assets/sounds/move.wav",
                         "assets/sounds/capture.wav",
                         "assets/sounds/errorMove.wav",
-                        "assets/sounds/check_alert.wav");
+                        "assets/sounds/check_alert.wav",
+                        "assets/sounds/background.wav");
 
+    EFFECTS::playBackground(-1); // loop forever
+    
     // Build raw move table once at startup
     PIECE::buildRawMoveTable();
 
