@@ -10,6 +10,11 @@ public:
     COLOR       color;    // WHITE or BLACK
     POSITION    position; // 0..63 on the board
 
+    std::vector<MOVE> movesCheck;
+    std::vector<MOVE> movesCapture;
+    std::vector<MOVE> movesDevelopment;
+    std::vector<MOVE> movesQuiet;
+
     // 2d table of precomputed raw moves for all pieces
     inline static std::array<std::array<std::vector<MOVE>, 64>, 6> rawMoveTable;
     static int pieceTypeToIndex(PIECE_TYPE pt);
@@ -31,5 +36,15 @@ public:
     std::string getPositionAsString() const;
 
     // Abstract methods for directional valid moves
-    virtual std::vector<MOVE> getValidMoves(const POSITION& from, const CHESS& state) const = 0;
+    virtual void computeValidMoves(const POSITION& from, const CHESS& state) = 0;
+    virtual void computeValidMovesInCheck(const POSITION& from, const CHESS& state, const std::vector<POSITION>& attackers) = 0;
+
+    // General rules: allied‐occupancy + pin‐check.
+    // Returns true if the move m (from 'from' to m.to) is allowed by general chess rules:
+    //  - Does not land on an allied piece.
+    //  - Does not expose own king to sliding attack (pin check).
+    // For kings themselves, this helper skips pin logic (king‐specific legality like "not moving into attacked square" must be handled separately).
+    bool generalRulesAllow(const MOVE& m, const CHESS& state) const;
+    bool discoveredAttack(const MOVE& m, const CHESS& state) const;
+
 };

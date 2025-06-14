@@ -1,6 +1,13 @@
 #include "rook.h"
 #include "../logic/chess.h"
 
-std::vector<MOVE> ROOK::getValidMoves(const POSITION& from, const CHESS& state) const {
-    return {};
+ROOK::ROOK(POSITION pos, COLOR col) : PIECE(PIECE_TYPE::ROOK, col, pos) {}
+
+void ROOK::computeValidMoves(const POSITION &from, const CHESS &state)
+{
+}
+
+void ROOK::computeValidMovesInCheck(const POSITION& from, const CHESS& state, const std::vector<POSITION>& attackers)
+{
+
 }
