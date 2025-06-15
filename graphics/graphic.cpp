@@ -932,6 +932,8 @@ void GRAPHICS::animateMove(const CHESS& state, int fromIdx, int toIdx, int durat
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, boardTexture, nullptr, nullptr);
 
+        drawFaces();
+
         // 8) Draw all other pieces at their normal (scaled) positions:
         for (int idx = 0; idx < 64; ++idx) {
             if (idx == fromIdx) continue; // skip the moving piece at origin

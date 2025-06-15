@@ -15,6 +15,9 @@ public:
     std::vector<MOVE> movesDevelopment;
     std::vector<MOVE> movesQuiet;
 
+    std::vector<std::pair<MOVE, POSITION>> directAttackInfo;
+    std::vector<std::pair<MOVE, POSITION>> discoveredAttackInfo;
+
     // 2d table of precomputed raw moves for all pieces
     inline static std::array<std::array<std::vector<MOVE>, 64>, 6> rawMoveTable;
     static int pieceTypeToIndex(PIECE_TYPE pt);
@@ -45,6 +48,10 @@ public:
     //  - Does not expose own king to sliding attack (pin check).
     // For kings themselves, this helper skips pin logic (king‐specific legality like "not moving into attacked square" must be handled separately).
     bool generalRulesAllow(const MOVE& m, const CHESS& state) const;
-    bool discoveredAttack(const MOVE& m, const CHESS& state) const;
+    bool discoveredAttack(const MOVE& m, const CHESS& state);
 
+    // Returns true if all squares strictly between 'fromIdx' and 'toIdx' on a rook/bishop/queen move are empty.
+    bool isPathClearRook(const MOVE &m, const CHESS &state);
+    bool isPathClearBishop(const MOVE &m, const CHESS &state);
+    bool isPathClearQueen(const MOVE &m, const CHESS &state);
 };

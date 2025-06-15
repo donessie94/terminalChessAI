@@ -6,7 +6,7 @@ void CHESS::changeTurn(){
     computeNewValidMoves(); // Recompute valid moves for the new player
 }
 
-CHESS::CHESS() :  board(64), wKingPosition(4), bKingPosition(60), check(false), checkMate(false) {
+CHESS::CHESS() :  board(64), wKingPosition(4), bKingPosition(60), check(false), checkMate(false), staleMate(false) {
     currentPlayer = COLOR::WHITE;
     turnCount     = 0;
 
@@ -53,7 +53,15 @@ CHESS::CHESS() :  board(64), wKingPosition(4), bKingPosition(60), check(false), 
     computeNewValidMoves();
 }
 
-bool CHESS::movePiece(const MOVE& move)
+void CHESS::updateMoveHistory(const MOVE& move)
+{
+    MOVE m(move.from, move.to, move.pieceType);
+
+
+    moveHistory.push_back(m);
+}
+
+bool CHESS::movePiece(const MOVE &move)
 {
     //SDL_Log("movePiece called: %d->%d for player %s", move.from.index, move.to.index,
     //        currentPlayer==COLOR::WHITE?"WHITE":"BLACK");
@@ -133,6 +141,29 @@ bool CHESS::movePiece(const MOVE& move)
         dstPtr.reset();
     }
 
+    // at this point the move is valid so if there was any check prior we are safe to remove it
+    // (we will put the check flag on again if player at turn gives check tho the next player at turn tho)
+    if(check)
+        check=false;
+
+    // Update check/checkMate/attackers info:
+    if(isInCheckList){
+        attackers.clear();
+        for(auto &pair : board[move.from.index]->directAttackInfo){
+            if(move.from.index == pair.first.from.index && move.to.index == pair.first.to.index){
+                attackers.push_back(pair.second);
+            }
+        }
+
+        for(auto &pair : board[move.from.index]->discoveredAttackInfo){
+            if(move.from.index == pair.first.from.index && move.to.index == pair.first.to.index){
+                attackers.push_back(pair.second);
+            }
+        }
+
+        check = true;
+    }
+
     // Move the piece pointer:
     dstPtr = std::move(srcPtr);
     // Now board[fromIdx] (srcPtr) is nullptr.
@@ -150,12 +181,9 @@ bool CHESS::movePiece(const MOVE& move)
     }
     // Otherwise, no immediate king‐position change here.
 
-    // Update check/checkMate/attackers info:
-    if(isInCheckList){
-      attackers.clear();
-      check = true;
-      //we still need to find a way to populate here the new attackers vector with the right updated information
-    }
+
+
+    updateMoveHistory(move);
 
     // Advance turn:
     changeTurn();
@@ -209,6 +237,22 @@ void CHESS::computeNewValidMoves()
             movesQuiet.insert(movesQuiet.end(),
                               piecePtr->movesQuiet.begin(),
                               piecePtr->movesQuiet.end());
+        }
+    }
+
+    bool noMoveExists = !movesCheck.empty()
+                       || !movesCapture.empty()
+                       || !movesDevelopment.empty()
+                       || !movesQuiet.empty();
+
+    if (!noMoveExists) {
+        // No legal moves at all for side to move:
+        if (inCheck) {
+            // Side to move is in check and has no legal moves: checkmate.
+            checkMate = true;
+        } else {
+            // Side to move is not in check but has no legal moves: stalemate.
+            staleMate = true;
         }
     }
 }

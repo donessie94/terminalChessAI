@@ -65,6 +65,11 @@ void KNIGHT::computeValidMoves(const POSITION& from, const CHESS& state) {
 
         // 6) Categorize
         if (givesCheck) {
+            if(directCheck){
+                MOVE moveInfo(POSITION(m.from.index), POSITION(m.to.index), state.board[m.from.index]->type);
+                POSITION attack(m.to.index);
+                directAttackInfo.emplace_back(moveInfo, attack);
+            }
             movesCheck.push_back(m);
         }
         else if (isCapture) {
@@ -81,14 +86,15 @@ void KNIGHT::computeValidMoves(const POSITION& from, const CHESS& state) {
 
 // only moves possible by pieces that are not the king in this situation are blocking the check or capturing the attacking piece
 // knight and pawns attack are unblockable, and if the piece is right next to the king attack is also unblockable
+// note blocking or capturing an enemy piece may put the enemy king in check so we must check for that here too
 void KNIGHT::computeValidMovesInCheck(const POSITION& from, const CHESS& state, const std::vector<POSITION>& attackers) {
     movesCheck.clear();
     movesCapture.clear();
     movesDevelopment.clear();
     movesQuiet.clear();
 
-    // 1) If more than 1 attacker, knight cannot block or capture both; no valid knight moves to resolve check.
-    if (attackers.size() > 1) {
+    // If more than 1 attacker, knight cannot block or capture both; no valid knight moves to resolve check.
+    if (attackers.size() != 1) {
         return;
     }
     // Exactly one attacker
@@ -106,7 +112,7 @@ void KNIGHT::computeValidMovesInCheck(const POSITION& from, const CHESS& state, 
     const POSITION &kingPos = (color == COLOR::WHITE ? state.wKingPosition : state.bKingPosition);
     int kingIdx = kingPos.index;
 
-    // 2) Determine if unblockable by interposition
+    // Determine if unblockable by interposition
     bool unblockable = false;
     // If attacker is knight or pawn, check is always adjacent → unblockable
     if (attackerType == PIECE_TYPE::KNIGHT || attackerType == PIECE_TYPE::PAWN) {
@@ -126,7 +132,12 @@ void KNIGHT::computeValidMovesInCheck(const POSITION& from, const CHESS& state, 
     int fromIdx  = from.index;
     const auto &rawMoves = PIECE::rawMoveTable[pieceIdx][fromIdx];
 
-    // 3) If not unblockable, compute blocking squares between attacker and king
+    // Precompute enemy king index
+    int enemyKingIdx = (color == COLOR::WHITE
+                        ? state.bKingPosition.index
+                        : state.wKingPosition.index);
+
+    // If not unblockable, compute blocking squares between attacker and king
     std::vector<int> blockingSquares;
     if (!unblockable) {
         // Ensure attacker and king are aligned along file, rank, or diagonal; they must be for a sliding check
@@ -165,7 +176,7 @@ void KNIGHT::computeValidMovesInCheck(const POSITION& from, const CHESS& state, 
         // else: theoretically if not aligned, sliding piece couldn't be giving check; but input should guarantee alignment.
     }
 
-    // 4) Iterate raw knight moves
+    // Iterate raw knight moves
     for (const MOVE &m : rawMoves) {
         int toIdx = m.to.index;
 
@@ -174,19 +185,39 @@ void KNIGHT::computeValidMovesInCheck(const POSITION& from, const CHESS& state, 
             continue;
         }
 
-        // 4b) If capturing the attacker
+        // If capturing the attacker:
         if (toIdx == attackerIdx) {
-            // Capture attacker resolves check, if generalRulesAllow passed
-            movesCapture.push_back(m);
-            // Note: you could also check if capturing leaves king in check by some other piece,
-            // but generalRulesAllow should already ensure your king isn't left in check by pin.
+            // This move captures the checking piece. It resolves the check, but might also give check to opponent.
+            bool directCheck = false;
+            //  - Direct: from the new knight position, can it attack the enemy king?
+            {
+                const auto &destRaw = PIECE::rawMoveTable[pieceIdx][toIdx];
+                for (const MOVE &rm : destRaw) {
+                    // note i dont need to capture the king (this is not possible) just "look" at him so no need to
+                    // check if the capture of the enemy king (that move) leave our king in check that makes no sense
+                    if (rm.to.index == enemyKingIdx) {
+                        directCheck = true;
+                        break;
+                    }
+                }
+            }
+            //  - Discovered: does moving this knight uncover a sliding attack on the enemy king?
+            bool discCheck = discoveredAttack(m, state);
+            if (directCheck || discCheck) {
+                if(directCheck){
+                    MOVE moveInfo(POSITION(m.from.index), POSITION(m.to.index), state.board[m.from.index]->type);
+                    POSITION attack(m.to.index);
+                    directAttackInfo.emplace_back(moveInfo, attack);
+                }
+                movesCheck.push_back(m);
+            } else {
+                movesCapture.push_back(m);
+            }
             continue;
         }
 
-        // 4c) If blocking is possible (only when not unblockable)
+        // If blocking is possible (only when not unblockable)
         if (!unblockable) {
-            // If this move lands on one of the blocking squares, it interposes between attacker and king
-            // before the king; check that toIdx matches a blocking square:
             bool isBlockSquare = false;
             for (int bidx : blockingSquares) {
                 if (toIdx == bidx) {
@@ -195,9 +226,29 @@ void KNIGHT::computeValidMovesInCheck(const POSITION& from, const CHESS& state, 
                 }
             }
             if (isBlockSquare) {
-                // This knight move blocks the slider’s check, and generalRulesAllow passed,
-                // so it is a valid move to resolve check.
-                movesQuiet.push_back(m);
+                // This knight move interposes between attacker and our king, resolving the check.
+                // But it might give a check to the opponent afterward.
+                bool directCheck = false;
+                {
+                    const auto &destRaw = PIECE::rawMoveTable[pieceIdx][toIdx];
+                    for (const MOVE &rm : destRaw) {
+                        if (rm.to.index == enemyKingIdx) {
+                            directCheck = true;
+                            break;
+                        }
+                    }
+                }
+                bool discCheck = discoveredAttack(m, state);
+                if (directCheck || discCheck) {
+                    if(directCheck){
+                        MOVE moveInfo(POSITION(m.from.index), POSITION(m.to.index), state.board[m.from.index]->type);
+                        POSITION attack(m.to.index);
+                        directAttackInfo.emplace_back(moveInfo, attack);
+                    }
+                    movesCheck.push_back(m);
+                } else {
+                    movesQuiet.push_back(m);
+                }
                 continue;
             }
         }

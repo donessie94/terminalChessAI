@@ -185,238 +185,343 @@ void PIECE::buildRawMoveTable()
 }
 
 bool PIECE::generalRulesAllow(const MOVE& m, const CHESS& state) const {
-    int fromIdx = m.from.index;
-    int toIdx   = m.to.index;
+    // unpack positions & indices
+    const POSITION &from    = m.from;
+    const POSITION &to      = m.to;
+    const int      fromIdx  = from.index;
+    const int      toIdx    = to.index;
 
-    // 1) Allied‐occupancy check
+    // allied-occupancy at destination
     const auto &destPtr = state.board[toIdx];
     if (destPtr && destPtr->color == this->color) {
-        // Can't land on your own piece
+        // here I'm disallowing landing on my own piece
         return false;
     }
 
-    // 2) Pin‐check: if moving this piece (not the king) uncovers a sliding attack on our king, disallow.
-    // Determine our king's position:
+    // pin-check: locate my king
     const POSITION &kingPos = (this->color == COLOR::WHITE
                                ? state.wKingPosition
                                : state.bKingPosition);
-    int kingIdx = kingPos.index;
+    const int kingIdx = kingPos.index;
 
-    // If this piece is the king itself, skip pin‐check here.
+    // if I'm the king, skip pin logic
     if (fromIdx == kingIdx) {
+        // here I'm letting the king move (self-check is handled elsewhere)
         return true;
     }
 
-    // 2a) Check alignment: same file, same rank, same “\” diagonal, or same “/” anti‐diagonal?
+    // see if 'from' sits on the same ray as my king
+    enum Alignment { FILE, RANK, DIAG, ANTIDIAG };
     bool aligned = false;
-    int step = 0;
-    enum Alignment { FILE, RANK, DIAG, ANTIDIAG } alignType = FILE;
+    Alignment alignType = FILE;
 
-    // same file?
-    if (m.from.file == kingPos.file) {
-        aligned = true;
+    // convert positions to 0..7 grid indices
+    int fromRankIdx = from.rank - 1;        // 1..8 → 0..7
+    int fromFileIdx = from.file - 'a';      // 'a'..'h' → 0..7
+    int kingRankIdx = kingPos.rank - 1;
+    int kingFileIdx = kingPos.file - 'a';
+
+    // compute step in that grid to move away from the king
+    int stepRank = 0, stepFile = 0;
+
+    // file-aligned?
+    if (from.file == kingPos.file) {
+        if (to.file == kingPos.file) return true;  // still protecting
+        aligned   = true;
         alignType = FILE;
-        // file vertical: index difference by multiples of 8.
-        // Choose step so scanning goes away from king beyond 'from'.
-        step = (fromIdx < kingIdx ? -8 : +8);
+
+        // vertical ray: file constant
+        stepFile = 0;
+        // if king above from, step down; else step up
+        stepRank = (kingRankIdx > fromRankIdx ? -1 : +1);
     }
-    // same rank?
-    else if (m.from.rank == kingPos.rank) {
-        aligned = true;
+    // rank-aligned?
+    else if (from.rank == kingPos.rank) {
+        if (to.rank == kingPos.rank) return true;
+        aligned   = true;
         alignType = RANK;
-        // scanning left/right: ±1
-        step = (fromIdx < kingIdx ? -1 : +1);
+
+        // horizontal ray: rank constant
+        stepRank = 0;
+        // if king to right, step left; else step right
+        stepFile = (kingFileIdx > fromFileIdx ? -1 : +1);
     }
-    // same "\" diagonal?
-    else if (m.from.diagonal == kingPos.diagonal) {
-        aligned = true;
+    // "\" diagonal?
+    else if (from.diagonal == kingPos.diagonal) {
+        if (to.diagonal == kingPos.diagonal) return true;
+        aligned   = true;
         alignType = DIAG;
-        // "\" diagonal stepping ±9
-        step = (fromIdx < kingIdx ? -9 : +9);
+
+        // "\" diagonal: both step same direction
+        stepRank = (kingRankIdx > fromRankIdx ? -1 : +1);
+        stepFile = (kingFileIdx > fromFileIdx ? -1 : +1);
     }
-    // same "/" anti‐diagonal?
-    else if (m.from.antiDiagonal == kingPos.antiDiagonal) {
-        aligned = true;
+    // "/" anti-diagonal?
+    else if (from.antiDiagonal == kingPos.antiDiagonal) {
+        if (to.antiDiagonal == kingPos.antiDiagonal) return true;
+        aligned   = true;
         alignType = ANTIDIAG;
-        // "/" diagonal stepping ±7
-        step = (fromIdx < kingIdx ? -7 : +7);
+
+        // "/" diagonal: rank & file step opposite directions
+        stepRank = (kingRankIdx > fromRankIdx ? -1 : +1);
+        stepFile = (kingFileIdx > fromFileIdx ? +1 : -1);
     }
 
+    // if I'm not aligned, I can't uncover a slider
     if (!aligned) {
-        // Not aligned with king → cannot uncover sliding attack along that line
+        // here I'm safe—no pin on a non-aligned ray
         return true;
     }
 
-    // 2b) Scan from the square beyond fromIdx along 'step'
-    int scanIdx = fromIdx + step;
-    while (scanIdx >= 0 && scanIdx < 64) {
+    // scan square-by-square in 0..7 bounds
+    int scanRank = fromRankIdx + stepRank;
+    int scanFile = fromFileIdx + stepFile;
+    while (scanRank >= 0 && scanRank < 8 &&
+           scanFile >= 0 && scanFile < 8) {
+        // convert back to 0..63
+        int scanIdx = scanRank * 8 + scanFile;
         const auto &pPtr = state.board[scanIdx];
+
         if (pPtr) {
-            // First piece encountered along that ray
+            // here I'm at the first piece blocking the ray
             if (pPtr->color == this->color) {
-                // Allied piece blocks safely
+                // allied piece blocks safely
+                SDL_Log("move (%d, %d) available -> allied at %d blocks", m.from.index,m.to.index,scanIdx);
                 break;
             }
-            // Enemy piece: is it a sliding attacker along this line?
+            // enemy piece: only a true slider pins
             PIECE_TYPE t = pPtr->type;
             bool isAttacker = false;
             if (alignType == FILE || alignType == RANK) {
-                // straight line: rook or queen attack
-                if (t == PIECE_TYPE::ROOK || t == PIECE_TYPE::QUEEN) {
-                    isAttacker = true;
-                }
+                // straight‐line slider?
+                isAttacker = (t == PIECE_TYPE::ROOK || t == PIECE_TYPE::QUEEN);
             } else {
-                // diagonal: bishop or queen attack
-                if (t == PIECE_TYPE::BISHOP || t == PIECE_TYPE::QUEEN) {
-                    isAttacker = true;
-                }
+                // diagonal slider?
+                isAttacker = (t == PIECE_TYPE::BISHOP || t == PIECE_TYPE::QUEEN);
             }
             if (isAttacker) {
-                // Moving 'from' piece would expose king to this sliding attack: illegal
+                // here I'm uncovering a sliding attack on my king → pinned
                 return false;
             }
-            // Otherwise, some other enemy piece blocks but is not attacker → safe
+            // otherwise non-slider enemy blocks safely
             break;
         }
-        // empty square: continue scanning
-        scanIdx += step;
+
+        // empty: advance to next square
+        scanRank += stepRank;
+        scanFile += stepFile;
     }
 
+    // here I'm done scanning with no pin detected → move is allowed
     return true;
 }
 
-bool PIECE::discoveredAttack(const MOVE& m, const CHESS& state) const {
-    // This checks if moving this piece from m.from to m.to uncovers
-    // an allied sliding piece attacking the enemy king.
-    // 1) Identify enemy king position:
+bool PIECE::discoveredAttack(const MOVE& m, const CHESS& state) {
+    // Enemy king position
     const POSITION &enemyKingPos = (this->color == COLOR::WHITE
                                     ? state.bKingPosition
                                     : state.wKingPosition);
-    int kingIdx = enemyKingPos.index;
-
-    // 2) Starting square:
-    int fromIdx = m.from.index;
+    // Source square
     const POSITION &fromPos = m.from;
 
-    // 3) Quick check: is fromPos aligned with enemy king?
-    bool sameFile = (fromPos.file == enemyKingPos.file);
-    bool sameRank = (fromPos.rank == enemyKingPos.rank);
-    bool sameDiag = (fromPos.diagonal == enemyKingPos.diagonal);
+    // Quick alignment check
+    bool sameFile = (fromPos.file         == enemyKingPos.file);
+    bool sameRank = (fromPos.rank         == enemyKingPos.rank);
+    bool sameDiag = (fromPos.diagonal     == enemyKingPos.diagonal);
     bool sameAnti = (fromPos.antiDiagonal == enemyKingPos.antiDiagonal);
     if (!(sameFile || sameRank || sameDiag || sameAnti)) {
-        // Not aligned → cannot be a discovered attack on the king along a sliding line
+        // here I'm not aligned → no possible discovered attack
         return false;
     }
 
-    // 4) Determine scan direction (step) from fromIdx away from the king, to look for allied slider:
-    int step = 0;
+    // Convert to 0..7 grid indices
+    int fromR = fromPos.rank - 1;          // 1..8 → 0..7
+    int fromF = fromPos.file - 'a';        // 'a'..'h' → 0..7
+    int kingR = enemyKingPos.rank - 1;
+    int kingF = enemyKingPos.file - 'a';
+
+    // Determine grid‐step away from the king
+    int stepR = 0, stepF = 0;
     if (sameFile) {
-        // Compare ranks: POSITION.rank is 1..8
-        if (fromPos.rank < enemyKingPos.rank) {
-            // from is "below" king; slider must be further below: decreasing rank → index step -8
-            step = -8;
-        } else {
-            // from above king; slider must be further above: increasing rank → +8
-            step = +8;
-        }
+        // vertical ray
+        stepF = 0;
+        // if king above me (larger rankIdx), step down; else up
+        stepR = (kingR > fromR ? -1 : +1);
     }
     else if (sameRank) {
-        // Compare files: file char 'a'..'h'
-        if (fromPos.file < enemyKingPos.file) {
-            // from is to left of king; slider must be further left: file decreasing → index -1
-            step = -1;
-        } else {
-            // from to right of king; slider further right: +1
-            step = +1;
-        }
+        // horizontal ray
+        stepR = 0;
+        // if king to my right, step left; else right
+        stepF = (kingF > fromF ? -1 : +1);
     }
     else if (sameDiag) {
-        // "\" diagonal: index difference ±9
-        // For "\" diag, moving NE increases index by +9, moving SW decreases by -9.
-        // If from is "southwest" of king (i.e., fromIdx < kingIdx in diagonal sense?), better compare ranks:
-        if (fromPos.rank < enemyKingPos.rank) {
-            // from has smaller rank, king higher: from is SW of king; slider must be further SW: decreasing rank, decreasing file → step = -9
-            step = -9;
-        } else {
-            // from is NE of king; slider further NE: step = +9
-            step = +9;
-        }
+        // "\" diagonal: both same direction
+        stepR = (kingR > fromR ? -1 : +1);
+        stepF = (kingF > fromF ? -1 : +1);
     }
     else { // sameAnti
-        // "/" anti-diagonal: index difference ±7
-        // For "/" diag, moving NW increases by +7, moving SE decreases by -7? Actually depends on indexing:
-        // Check: index = rank*8 + file. For "/" diag: if from.rank < king.rank, from is SE of king? Actually easier: compare rank:
-        if (fromPos.rank < enemyKingPos.rank) {
-            // from rank smaller than king: from is below king; on "/" diag that means from is SE of king; slider must be further SE: step = -7
-            step = -7;
-        } else {
-            // from is NW of king; slider further NW: step = +7
-            step = +7;
-        }
+        // "/" diagonal: rank & file opposite directions
+        stepR = (kingR > fromR ? -1 : +1);
+        stepF = (kingF > fromF ? +1 : -1);
     }
 
-    // 5) Scan from the square next to fromIdx along 'step', looking for an allied sliding piece
-    int scanIdx = fromIdx + step;
-    while (scanIdx >= 0 && scanIdx < 64) {
+    // Scan outward from the square next to 'from'
+    int scanR = fromR + stepR;
+    int scanF = fromF + stepF;
+    while (scanR >= 0 && scanR < 8 && scanF >= 0 && scanF < 8) {
+        int scanIdx = scanR * 8 + scanF;
         const auto &pPtr = state.board[scanIdx];
+
         if (pPtr) {
-            // Found first piece along that ray beyond fromIdx
+            // here I'm at the first piece beyond 'from'
             if (pPtr->color == this->color) {
-                // Allied piece: could be sliding attacker
+                // allied piece may slide to king
                 PIECE_TYPE pt = pPtr->type;
                 bool isSlider = false;
-                // Determine if this ray is straight (file or rank) or diagonal:
                 if (sameFile || sameRank) {
-                    // straight line: rook or queen can attack
-                    if (pt == PIECE_TYPE::ROOK || pt == PIECE_TYPE::QUEEN) {
-                        isSlider = true;
-                    }
+                    // straight line: rook or queen
+                    isSlider = (pt == PIECE_TYPE::ROOK || pt == PIECE_TYPE::QUEEN);
                 } else {
                     // diagonal: bishop or queen
-                    if (pt == PIECE_TYPE::BISHOP || pt == PIECE_TYPE::QUEEN) {
-                        isSlider = true;
-                    }
+                    isSlider = (pt == PIECE_TYPE::BISHOP || pt == PIECE_TYPE::QUEEN);
                 }
+
                 if (isSlider) {
-                    // check that between fromIdx and kingIdx there is no piece except the moving one.
-                    int betweenIdx = fromIdx;
-                    int stepToKing = 0;
-                    // Determine step from fromIdx toward kingIdx (the opposite direction):
-                    if (sameFile) {
-                        stepToKing = (fromPos.rank < enemyKingPos.rank ? +8 : -8);
-                    } else if (sameRank) {
-                        stepToKing = (fromPos.file < enemyKingPos.file ? +1 : -1);
-                    } else if (sameDiag) {
-                        stepToKing = (fromPos.rank < enemyKingPos.rank ? +9 : -9);
-                    } else { // sameAnti
-                        stepToKing = (fromPos.rank < enemyKingPos.rank ? +7 : -7);
-                    }
-                    // Scan from fromIdx+stepToKing up to but not including kingIdx:
-                    betweenIdx = fromIdx + stepToKing;
-                    bool pathClear = true;
-                    while (betweenIdx != kingIdx) {
-                        // If there's any piece between fromIdx and kingIdx (other than at fromIdx which is the moving piece),
-                        // then even after moving, that piece would block the sliding attack.
-                        if (state.board[betweenIdx]) {
-                            pathClear = false;
+                    // here I'm checking path between 'from' and the king for blockers
+                    // compute step from 'from' toward king (opposite of above)
+                    int toKingR = (fromR < kingR ? +1 : -1);
+                    int toKingF = (fromF < kingF ? +1 : -1);
+                    if (sameFile)      { toKingF = 0; }
+                    else if (sameRank) { toKingR = 0; }
+                    // walk between from and king (exclusive)
+                    int r = fromR + toKingR, f = fromF + toKingF;
+                    bool clearPath = true;
+                    while (!(r == kingR && f == kingF)) {
+                        int idx = r * 8 + f;
+                        if (state.board[idx]) {
+                            // here I'm finding a blocker → no discovered attack
+                            clearPath = false;
                             break;
                         }
-                        betweenIdx += stepToKing;
+                        r += toKingR;
+                        f += toKingF;
                     }
-                    if (!pathClear) {
-                        // blocked between from and king → no discovered attack
-                        return false;
+                    if (clearPath) {
+                        // here I'm uncovering an allied slider attack on the king
+                        MOVE mv(m.from, m.to, this->type);
+                        POSITION sliderPos(scanIdx);
+                        discoveredAttackInfo.emplace_back(mv, sliderPos);
+                        return true;
                     }
-                    // If pathClear, then moving piece uncovers slider attack
-                    return true;
                 }
             }
-            // Either allied non-slider or enemy piece blocks the ray → no discovered attack
+            // allied non-slider or enemy piece blocks this ray → stop scanning
             break;
         }
-        // Empty square: continue scanning
-        scanIdx += step;
+
+        // empty square → continue stepping
+        scanR += stepR;
+        scanF += stepF;
     }
+
+    // here I'm done scanning with no discovered attack
     return false;
 }
 
+bool PIECE::isPathClearRook(const MOVE &m, const CHESS &state) {
+    const POSITION &from = m.from;
+    const POSITION &to   = m.to;
+
+    // Here I'm determining step in index space:
+    int step = 0;
+    if (from.rank == to.rank) {
+        // horizontal move
+        if (to.file > from.file) {
+            // here I'm moving right
+            step = +1;
+        } else {
+            // here I'm moving left
+            step = -1;
+        }
+    } else {
+        // vertical move
+        if (to.rank > from.rank) {
+            // here I'm moving up (higher rank)
+            step = +8;
+        } else {
+            // here I'm moving down (lower rank)
+            step = -8;
+        }
+    }
+
+    // Here I'm iterating squares strictly between from.index and to.index:
+    int idx = from.index + step;
+    while (idx != to.index) {
+        // Here I'm checking if there's a piece blocking:
+        if (state.board[idx]) {
+            // here I'm seeing a blocker before reaching destination
+            return false;
+        }
+        idx += step;
+    }
+
+    // No blockers found → path is clear.
+    return true;
+}
+
+bool PIECE::isPathClearBishop(const MOVE &m, const CHESS &state) {
+    const POSITION &from = m.from;
+    const POSITION &to   = m.to;
+    int dr = to.rank - from.rank;
+    int df = to.file - from.file;
+
+    // Here I'm determining step: ±9 or ±7
+    int step = 0;
+    if (dr > 0) {
+        // moving up
+        if (df > 0) {
+            // here I'm moving up-right
+            step = +9;
+        } else {
+            // here I'm moving up-left
+            step = +7;
+        }
+    } else {
+        // moving down
+        if (df > 0) {
+            // here I'm moving down-right
+            step = -7;
+        } else {
+            // here I'm moving down-left
+            step = -9;
+        }
+    }
+    int idx = from.index + step;
+    while (idx != to.index) {
+        if (state.board[idx]) {
+            // here I'm seeing a blocker in bishop path
+            return false;
+        }
+        idx += step;
+    }
+    // No blockers → path is clear
+    return true;
+}
+
+bool PIECE::isPathClearQueen(const MOVE &m, const CHESS &state) {
+    const POSITION &from = m.from;
+    const POSITION &to   = m.to;
+    // Here I'm checking if it's straight or diagonal:
+    if (from.rank == to.rank || from.file == to.file) {
+        // here I'm delegating to rook logic
+        return isPathClearRook(m, state);
+    }
+    int dr = to.rank - from.rank;
+    int df = to.file - from.file;
+    if (std::abs(dr) == std::abs(df)) {
+        // here I'm delegating to bishop logic
+        return isPathClearBishop(m, state);
+    }
+    // not a sliding move
+    return false;
+}
