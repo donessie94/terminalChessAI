@@ -185,112 +185,93 @@ void PIECE::buildRawMoveTable()
 }
 
 bool PIECE::generalRulesAllow(const MOVE& m, const CHESS& state) const {
-    // Unpack source & target
-    const POSITION &from    = m.from;
-    const POSITION &to      = m.to;
-    const int      fromIdx  = from.index;
-    const int      toIdx    = to.index;
-
-    // Allied‐occupancy: no landing on our own piece
-    const auto &destPtr = state.board[toIdx];
-    if (destPtr && destPtr->color == this->color) {
-        // here I'm disallowing moves onto my own pieces
+    // Unpack and allied‐occupancy at destination
+    const POSITION &from   = m.from;
+    const POSITION &to     = m.to;
+    const int      toIdx   = to.index;
+    if (const auto &dp = state.board[toIdx]; dp && dp->color == this->color) {
+        // here I'm disallowing landing on my own piece
         return false;
     }
 
-    // Find my king; if I'm moving the king, skip pin checks
+    // Locate my king; skip if I'm the king
     const POSITION &kingPos = (this->color == COLOR::WHITE
                                ? state.wKingPosition
                                : state.bKingPosition);
-    if (fromIdx == kingPos.index) {
-        // here I'm letting the king move (check itself handled elsewhere)
+    if (from.index == kingPos.index) {
+        // here I'm letting the king move (self-check elsewhere)
         return true;
     }
 
-    // Quick alignment test: must share file, rank, or diagonal
+    // Quick alignment test
     bool sameFile = (from.file         == kingPos.file);
     bool sameRank = (from.rank         == kingPos.rank);
     bool sameDiag = (from.diagonal     == kingPos.diagonal);
     bool sameAnti = (from.antiDiagonal == kingPos.antiDiagonal);
     if (!(sameFile || sameRank || sameDiag || sameAnti)) {
-        // here I'm not aligned → no sliding pin possible
+        // here I'm not aligned → no sliding‐pin possible
         return true;
     }
 
-    // Convert to 0..7 grid coordinates
-    int kingR = kingPos.rank - 1;    // 1..8 → 0..7
-    int kingF = kingPos.file - 'a';  // 'a'..'h' → 0..7
-    int fromR = from.rank   - 1;
-    int fromF = from.file   - 'a';
-
-    // Compute step from king toward the moving piece
-    auto sign = [](int x){ return x > 0 ? 1 : -1; };
-    int dr = fromR - kingR;
-    int df = fromF - kingF;
-    int stepR = 0, stepF = 0;
-    if (sameFile) {
-        // vertical: file constant
-        stepR = sign(dr);
-        stepF = 0;
-    } else if (sameRank) {
-        // horizontal: rank constant
-        stepR = 0;
-        stepF = sign(df);
-    } else {
-        // diagonal (both main and anti)
-        stepR = sign(dr);
-        stepF = sign(df);
+    // If I move still **on that same ray**, I continue blocking (or can capture)
+    if (   (sameFile && to.file         == kingPos.file)
+        || (sameRank && to.rank         == kingPos.rank)
+        || (sameDiag && to.diagonal     == kingPos.diagonal)
+        || (sameAnti && to.antiDiagonal == kingPos.antiDiagonal)) {
+        // here I'm staying on the pin‐ray → still safe
+        return true;
     }
 
-    // Scan outward from the king, skipping over 'from'
-    int scanR = kingR + stepR;
-    int scanF = kingF + stepF;
-    while (scanR >= 0 && scanR < 8 &&
-           scanF >= 0 && scanF < 8) {
-        int scanIdx = scanR * 8 + scanF;
+    // Compute 0..7 grid coordinates
+    int kr = kingPos.rank - 1, kf = kingPos.file - 'a';
+    int fr = from .rank - 1, ff = from .file - 'a';
 
-        // skip the square we're moving from
-        if (scanR == fromR && scanF == fromF) {
-            // here I'm pretending the mover is gone
-            scanR += stepR;
-            scanF += stepF;
+    // Determine step from king toward 'from'
+    auto sign = [](int d){ return d > 0 ? 1 : -1; };
+    int dr = fr - kr, df = ff - kf;
+    int stepR = 0, stepF = 0;
+    if      (sameFile) { stepR = sign(dr);      stepF = 0;          }
+    else if (sameRank) { stepR = 0;             stepF = sign(df);   }
+    else               { stepR = sign(dr);      stepF = sign(df);   }
+
+    // Scan outward from king, skipping the mover’s square
+    int scanR = kr + stepR, scanF = kf + stepF;
+    while (scanR >= 0 && scanR < 8 && scanF >= 0 && scanF < 8) {
+        int idx = scanR * 8 + scanF;
+        // pretend the mover is gone:
+        if (scanR == fr && scanF == ff) {
+            // here I'm skipping the mover’s square
+            scanR += stepR; scanF += stepF;
             continue;
         }
 
-        const auto &pPtr = state.board[scanIdx];
-        if (pPtr) {
-            // here I'm at the first real blocker beyond my king
-
-            // Is it an enemy slider?
+        if (const auto &p = state.board[idx]) {
+            // here I'm at first real blocker
             bool enemySlider = false;
-            if (pPtr->color != this->color) {
-                PIECE_TYPE pt = pPtr->type;
+            if (p->color != this->color) {
+                // check if that enemy piece is a slider along the ray
                 if (sameFile || sameRank) {
-                    // straight‐line slider?
-                    enemySlider = (pt == PIECE_TYPE::ROOK  ||
-                                   pt == PIECE_TYPE::QUEEN);
+                    enemySlider = (p->type == PIECE_TYPE::ROOK ||
+                                   p->type == PIECE_TYPE::QUEEN);
                 } else {
-                    // diagonal slider?
-                    enemySlider = (pt == PIECE_TYPE::BISHOP ||
-                                   pt == PIECE_TYPE::QUEEN);
+                    enemySlider = (p->type == PIECE_TYPE::BISHOP ||
+                                   p->type == PIECE_TYPE::QUEEN);
                 }
             }
 
             if (enemySlider) {
-                // here I'm uncovering a sliding attack on my king → move is pinned
+                // here I'm uncovering a sliding attack on my king → pinned
                 return false;
             }
-
-            // otherwise (ally or non‐slider enemy) safely blocks
+            // otherwise (ally or non-slider enemy) safely blocks
             break;
         }
 
-        // empty square: advance further out
-        scanR += stepR;
-        scanF += stepF;
+        // empty square: keep scanning
+        scanR += stepR; scanF += stepF;
     }
 
-    // No pin detected → move ok
+    // 8) No pin detected → move allowed
     return true;
 }
 
