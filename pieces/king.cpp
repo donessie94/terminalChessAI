@@ -252,6 +252,13 @@ void KING::computeValidMovesInCheck(const POSITION& from, const CHESS& state, co
             continue;
         }
 
+        // if trying to castle from check continue since this is not valid
+        if (fromIdx == homeIdx) {
+            int df = m.to.file - from.file;
+            if (std::abs(df) == 2)
+                continue;
+        }
+
         // 3) Basic attack and discovery flags
         bool isCapture = (state.board[toIdx] && state.board[toIdx]->color != color);
         bool discCheck = discoveredAttack(m, state);
