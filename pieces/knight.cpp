@@ -9,6 +9,8 @@ void KNIGHT::computeValidMoves(const POSITION& from, const CHESS& state) {
     movesCapture.clear();
     movesDevelopment.clear();
     movesQuiet.clear();
+    directAttackInfo.clear();
+    discoveredAttackInfo.clear();
 
     int pieceIdx = PIECE::pieceTypeToIndex(type);
     int fromIdx  = from.index;
@@ -92,9 +94,15 @@ void KNIGHT::computeValidMovesInCheck(const POSITION& from, const CHESS& state, 
     movesCapture.clear();
     movesDevelopment.clear();
     movesQuiet.clear();
+    directAttackInfo.clear();
+    discoveredAttackInfo.clear();
 
     // If more than 1 attacker, knight cannot block or capture both; no valid knight moves to resolve check.
     if (attackers.size() != 1) {
+        int s = attackers.size();
+        //SDL_Log("attackers size: %d", s);
+        //SDL_Log("attacker indexes are: %d and %d", attackers[0].index, attackers[1].index);
+
         return;
     }
     // Exactly one attacker

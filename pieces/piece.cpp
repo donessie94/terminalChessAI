@@ -484,3 +484,37 @@ bool PIECE::isPathClearQueen(const MOVE &m, const CHESS &state) {
     // not a sliding move
     return false;
 }
+
+bool PIECE::isPathClearPawn(const MOVE &m, const CHESS &state) const {
+    const POSITION &from = m.from;
+    const POSITION &to   = m.to;
+
+    // Diagonal pawn moves (captures/en passant) don’t need straight‐path checks
+    if (to.file != from.file) {
+        // here I'm allowing any diagonal pawn move as “path clear”
+        return true;
+    }
+
+    // Straight pawn move: the destination itself must be empty
+    int toIdx = to.index;
+    if (state.board[toIdx]) {
+        // here I'm disallowing a pawn from pushing straight into any occupied square
+        return false;
+    }
+
+    // Now scan each intermediate square in this file up to, but not including, toIdx
+    int fromIdx = from.index;
+    int step    = (this->color == COLOR::WHITE ? +8 : -8);
+    int scanIdx = fromIdx + step;
+
+    while (scanIdx != toIdx) {
+        if (state.board[scanIdx]) {
+            // here I'm seeing a piece blocking the pawn's straight move
+            return false;
+        }
+        scanIdx += step;
+    }
+
+    // No blockers and dest is empty → path is clear
+    return true;
+}

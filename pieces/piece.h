@@ -54,4 +54,5 @@ public:
     bool isPathClearRook(const MOVE &m, const CHESS &state);
     bool isPathClearBishop(const MOVE &m, const CHESS &state);
     bool isPathClearQueen(const MOVE &m, const CHESS &state);
+    bool isPathClearPawn(const MOVE &m, const CHESS &state) const;
 };

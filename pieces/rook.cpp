@@ -9,6 +9,8 @@ void ROOK::computeValidMoves(const POSITION &from, const CHESS &state)
     movesCapture.clear();
     movesDevelopment.clear();
     movesQuiet.clear();
+    directAttackInfo.clear();
+    discoveredAttackInfo.clear();
 
     int pieceIdx = PIECE::pieceTypeToIndex(type);
     int fromIdx  = from.index;
@@ -103,6 +105,8 @@ void ROOK::computeValidMovesInCheck(const POSITION& from, const CHESS& state, co
     movesCapture.clear();
     movesDevelopment.clear();
     movesQuiet.clear();
+    directAttackInfo.clear();
+    discoveredAttackInfo.clear();
 
     // If more than 1 attacker, rook cannot block or capture both; no valid rook moves to resolve check.
     if (attackers.size() != 1) {

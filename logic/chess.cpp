@@ -143,8 +143,11 @@ bool CHESS::movePiece(const MOVE &move)
 
     // at this point the move is valid so if there was any check prior we are safe to remove it
     // (we will put the check flag on again if player at turn gives check tho the next player at turn tho)
-    if(check)
+    if(check){
         check=false;
+        attackers.clear();
+    }
+
 
     // Update check/checkMate/attackers info:
     if(isInCheckList){
