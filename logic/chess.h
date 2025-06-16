@@ -33,6 +33,11 @@ public:
     bool checkMate;
     bool staleMate;
 
+    bool whiteCanCastleKingSide;
+    bool whiteCanCastleQueenSide;
+    bool blackCanCastleKingSide;
+    bool blackCanCastleQueenSide;
+
     CHESS();
 
     void changeTurn();

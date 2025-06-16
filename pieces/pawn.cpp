@@ -1,8 +1,9 @@
 #include "pawn.h"
 #include "../logic/chess.h"
 
-PAWN::PAWN(POSITION pos, COLOR col) : PIECE(PIECE_TYPE::PAWN, col, pos), enPassant(false) {}
+PAWN::PAWN(POSITION pos, COLOR col) : PIECE(PIECE_TYPE::PAWN, col, pos), enPassant(false), promoted(false) {}
 
+//missing promotion, it must be computed somewhere else, it must stop time promotion is quite anoying
 void PAWN::computeValidMoves(const POSITION &from, const CHESS &state)
 {
     movesCheck.clear();
@@ -165,6 +166,7 @@ void PAWN::computeValidMovesInCheck(const POSITION& from, const CHESS& state, co
     directAttackInfo.clear();
     discoveredAttackInfo.clear();
     enPassant=false;
+    promoted=false;
 
     // If more than 1 attacker, rook cannot block or capture both; no valid rook moves to resolve check.
     if (attackers.size() != 1) {

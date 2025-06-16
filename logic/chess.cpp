@@ -50,6 +50,12 @@ CHESS::CHESS() :  board(64), wKingPosition(4), bKingPosition(60), check(false), 
     place(4,0,COLOR::WHITE,PIECE_TYPE::KING);
     place(3,7,COLOR::BLACK,PIECE_TYPE::QUEEN);
     place(4,7,COLOR::BLACK,PIECE_TYPE::KING);
+
+    whiteCanCastleKingSide = true;
+    whiteCanCastleQueenSide = true;
+    blackCanCastleKingSide = true;
+    blackCanCastleQueenSide = true;
+
     computeNewValidMoves();
 }
 
@@ -190,6 +196,72 @@ bool CHESS::movePiece(const MOVE &move)
 
         check = true;
     }
+
+    // -------------------------------------------------------------------------------------------------
+    // here we know the move is valid; now update castling rights
+    if (srcPtr->type == PIECE_TYPE::KING) {
+        // here I'm moving the king → no castling on either side for this color
+        if (currentPlayer == COLOR::WHITE) {
+            whiteCanCastleKingSide  = false;
+            whiteCanCastleQueenSide = false;
+
+        } else {
+            blackCanCastleKingSide  = false;
+            blackCanCastleQueenSide = false;
+        }
+    }
+    else if (srcPtr->type == PIECE_TYPE::ROOK) {
+        // here I'm moving a rook → cancel only the corresponding side
+        if (currentPlayer == COLOR::WHITE) {
+            // white's rook on a1 (idx 0) is queen-side, on h1 (idx 7) is king-side
+            if (fromIdx == 0) {
+                // here I'm removing white's ability to castle queen-side
+                whiteCanCastleQueenSide = false;
+            }
+            else if (fromIdx == 7) {
+                // here I'm removing white's ability to castle king-side
+                whiteCanCastleKingSide = false;
+            }
+        } else {
+            // black's rook on a8 (idx 56) is queen-side, on h8 (idx 63) is king-side
+            if (fromIdx == 56) {
+                // here I'm removing black's ability to castle queen-side
+                blackCanCastleQueenSide = false;
+            }
+            else if (fromIdx == 63) {
+                // here I'm removing black's ability to castle king-side
+                blackCanCastleKingSide = false;
+            }
+        }
+    }
+    // -------------------------------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------------------------------
+    // if the move made it here its definetly valid so:
+    // if the king moves and its a 2 squares move we know is a castle move so we make sure the board eflects the right configuration after the castle
+    // since both the king and the rook must move to their respective positions
+    if (srcPtr->type == PIECE_TYPE::KING) {
+        int fileDiff = move.to.file - move.from.file;
+        if (std::abs(fileDiff) == 2) {
+            // here I'm detecting a castle
+            bool kingSide = (fileDiff > 0);
+
+            // figure out the rook's starting and ending file-indices
+            int rankIdx       = move.from.rank - 1;
+            int rookFromFile  = kingSide ? 7 : 0;                      // 'h' or 'a'
+            int rookToFile    = kingSide
+                                 ? (move.to.file - 'a' - 1)          // f‐file
+                                 : (move.to.file - 'a' + 1);         // d‐file
+
+            int rookFromIdx = rankIdx * 8 + rookFromFile;
+            int rookToIdx   = rankIdx * 8 + rookToFile;
+
+            // here I'm moving the rook into its castled square
+            board[rookToIdx] = std::move(board[rookFromIdx]);
+            board[rookToIdx]->position.setPosition(rookToIdx);
+        }
+    }
+    // -------------------------------------------------------------------------------------------------
 
     // Move the piece pointer:
     dstPtr = std::move(srcPtr);
