@@ -1,7 +1,7 @@
 #include "pawn.h"
 #include "../logic/chess.h"
 
-PAWN::PAWN(POSITION pos, COLOR col) : PIECE(PIECE_TYPE::PAWN, col, pos) {}
+PAWN::PAWN(POSITION pos, COLOR col) : PIECE(PIECE_TYPE::PAWN, col, pos), enPassant(false) {}
 
 void PAWN::computeValidMoves(const POSITION &from, const CHESS &state)
 {
@@ -11,6 +11,7 @@ void PAWN::computeValidMoves(const POSITION &from, const CHESS &state)
     movesQuiet.clear();
     directAttackInfo.clear();
     discoveredAttackInfo.clear();
+    enPassant=false;
 
     int pieceIdx = PIECE::pieceTypeToIndex(type);
     int fromIdx  = from.index;
@@ -48,14 +49,49 @@ void PAWN::computeValidMoves(const POSITION &from, const CHESS &state)
         }
 
         // capture detection:
-        const auto &destPtr = state.board[toIdx];
-        bool isCapture     = (destPtr && destPtr->color != color);
+        const auto &destPtr  = state.board[toIdx];
+        bool        isCapture = (destPtr && destPtr->color != color);
 
-        // diagonal must be capture; straight must NOT be capture
-        if ( (m.to.file != from.file)   // diagonal?
-            ? !isCapture              //   then reject if NOT a capture
-            :  isCapture ) {          // straight? then reject if it IS a capture
-            // here I'm skipping any pawn move that's invalid for its direction
+        // diagonal pawn move?
+        bool isDiagonal = (m.to.file != from.file);
+        if (isDiagonal && !isCapture) {
+            // maybe it’s en passant instead of a normal capture
+            bool isEnPassant = false;
+            if (!state.moveHistory.empty()) {
+                const MOVE &last = state.moveHistory.back();
+                // last move was an enemy pawn
+                if(state.board[last.to.index]->type == PIECE_TYPE::PAWN &&
+                    state.board[last.to.index]->color != color)
+                {
+                    // it moved two squares from its home rank
+                    int dr = last.to.rank - last.from.rank;
+                    if (std::abs(dr) == 2) {
+                        // 3) that pawn ended up adjacent to me
+                        if (last.to.rank == from.rank &&
+                            std::abs(last.to.file - from.file) == 1)
+                        {
+                            // and I’m moving diagonally behind it
+                            int epRank = from.rank + (color==COLOR::WHITE?+1:-1);
+                            if (m.to.rank == epRank &&
+                                m.to.file == last.to.file)
+                            {
+                                // here I'm marking it as en passant
+                                isEnPassant = true;
+                                enPassant=true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!isEnPassant) {
+                // here I'm skipping any illegal diagonal pawn move
+                continue;
+            }
+            // else: we'll treat it as a capture later (remove the pawn at last.to.index)
+        }
+        else if (!isDiagonal && isCapture) {
+            // straight‐ahead pawn move that tries to capture → illegal
             continue;
         }
 
@@ -128,6 +164,7 @@ void PAWN::computeValidMovesInCheck(const POSITION& from, const CHESS& state, co
     movesQuiet.clear();
     directAttackInfo.clear();
     discoveredAttackInfo.clear();
+    enPassant=false;
 
     // If more than 1 attacker, rook cannot block or capture both; no valid rook moves to resolve check.
     if (attackers.size() != 1) {
@@ -241,14 +278,48 @@ void PAWN::computeValidMovesInCheck(const POSITION& from, const CHESS& state, co
         }
 
         // capture detection:
-        const auto &destPtr = state.board[toIdx];
-        bool isCapture     = (destPtr && destPtr->color != color);
+        const auto &destPtr  = state.board[toIdx];
+        bool        isCapture = (destPtr && destPtr->color != color);
 
-        // diagonal must be capture; straight must NOT be capture
-        if ( (m.to.file != from.file)   // diagonal?
-            ? !isCapture              //   then reject if NOT a capture
-            :  isCapture ) {          // straight? then reject if it IS a capture
-            // here I'm skipping any pawn move that's invalid for its direction
+        // diagonal pawn move?
+        bool isDiagonal = (m.to.file != from.file);
+        if (isDiagonal && !isCapture) {
+            // maybe it’s en passant instead of a normal capture
+            bool isEnPassant = false;
+            if (!state.moveHistory.empty()) {
+                const MOVE &last = state.moveHistory.back();
+                // last move was an enemy pawn
+                if(state.board[last.to.index]->type == PIECE_TYPE::PAWN &&
+                    state.board[last.to.index]->color != color)
+                {
+                    // it moved two squares from its home rank
+                    int dr = last.to.rank - last.from.rank;
+                    if (std::abs(dr) == 2) {
+                        // 3) that pawn ended up adjacent to me
+                        if (last.to.rank == from.rank &&
+                            std::abs(last.to.file - from.file) == 1)
+                        {
+                            // and I’m moving diagonally behind it
+                            int epRank = from.rank + (color==COLOR::WHITE?+1:-1);
+                            if (m.to.rank == epRank &&
+                                m.to.file == last.to.file)
+                            {
+                                // here I'm marking it as en passant
+                                isEnPassant = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!isEnPassant) {
+                // here I'm skipping any illegal diagonal pawn move
+                continue;
+            }
+            // else: we'll treat it as a capture later (remove the pawn at last.to.index)
+        }
+        else if (!isDiagonal && isCapture) {
+            // straight‐ahead pawn move that tries to capture → illegal
             continue;
         }
 

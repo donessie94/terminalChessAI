@@ -140,6 +140,30 @@ bool CHESS::movePiece(const MOVE &move)
         // Destroy the captured piece:
         dstPtr.reset();
     }
+    else {
+        // here I'm in the “no piece at toIdx” case → may be en passant
+        if (srcPtr->type == PIECE_TYPE::PAWN) {
+            // grab our Pawn subclass
+            PAWN *p = static_cast<PAWN*>(srcPtr.get());
+            if (p->enPassant) {
+                // determine the index of the pawn being captured
+                // white captures downward (enemy pawn sits one rank below dest)
+                // black captures upward   (enemy pawn sits one rank above dest)
+                int capIdx = (p->color == COLOR::WHITE
+                            ? toIdx - 8
+                            : toIdx + 8);
+
+                auto &capPtr = board[capIdx];
+                if (capPtr && capPtr->type == PIECE_TYPE::PAWN && capPtr->color != currentPlayer) {
+                    // here I'm removing the captured pawn en passant
+                    capPtr.reset();
+                } else {
+                    SDL_Log("  en passant failed: no capturable pawn at %d", capIdx);
+                    return false;
+                }
+            }
+        }
+    }
 
     // at this point the move is valid so if there was any check prior we are safe to remove it
     // (we will put the check flag on again if player at turn gives check tho the next player at turn tho)
