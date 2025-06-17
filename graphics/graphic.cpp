@@ -1,994 +1,994 @@
-#include "graphic.h"
-
-// Computes the top-left pixel coordinate of square index [0..63],
-// accounting for BOARD_START offsets, square size, and line thickness.
-// - squareIdx: 0..63, where 0=a1, 1=b1, ..., 7=h1, 8=a2, ..., 63=h8.
-// - outX, outY: filled with pixel coordinates where the piece-drawing destRect should start.
-static void computeSquareTopLeft(int squareIdx, int& outX, int& outY) {
-    int file = squareIdx % 8;   // 0..7 for a..h
-    int rank = squareIdx / 8;   // 0..7 for rank1..rank8
-    // X: start + file * (square width + line thickness)
-    outX = BOARD_START_W + file * (SQUARE_WIDTH + LINE_SIZE);
-    // Y: invert rank so rank=0 (a1) is bottom, rank=7 (a8) is top
-    outY = BOARD_START_H + (7 - rank) * (SQUARE_HEIGHT + LINE_SIZE);
-}
-
-void GRAPHICS::getHighlightIndex(int index) {
-    highLightIndex = index;
-    moveFlag = !moveFlag;
-}
-
-GRAPHICS::~GRAPHICS() {
-    if(renderer) {SDL_DestroyRenderer(renderer);}
-    if(window) {SDL_DestroyWindow(window);}
-    if(squaresTexture) {SDL_DestroyTexture(squaresTexture);}
-    if(whitePawnTexture) {SDL_DestroyTexture(whitePawnTexture);}
-    if(blackPawnTexture) {SDL_DestroyTexture(blackPawnTexture);}
-    if(whiteRookTexture) {SDL_DestroyTexture(whiteRookTexture);}
-    if(blackRookTexture) {SDL_DestroyTexture(blackRookTexture);}
-    if(whiteKnightTexture) {SDL_DestroyTexture(whiteKnightTexture);}
-    if(blackKnightTexture) {SDL_DestroyTexture(blackKnightTexture);}
-    if(whiteBishopTexture) {SDL_DestroyTexture(whiteBishopTexture);}
-    if(blackBishopTexture) {SDL_DestroyTexture(blackBishopTexture);}
-    if(whiteQueenTexture) {SDL_DestroyTexture(whiteQueenTexture);}
-    if(blackQueenTexture) {SDL_DestroyTexture(blackQueenTexture);}
-    if(whiteKingTexture) {SDL_DestroyTexture(whiteKingTexture);}
-    if(blackKingTexture) {SDL_DestroyTexture(blackKingTexture);}
-    IMG_Quit();
-    SDL_Quit();
-}
-
-bool GRAPHICS::init(const char *windowTitle, int w, int h)
-{
-    moveFlag = false;
-    highLightIndex = -1;
-
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        SDL_Log("SDL_Init Error: %s", SDL_GetError());
-        return false;
-    }
-
-    if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) {
-        SDL_Log("IMG_Init Error: %s", IMG_GetError());
-        SDL_Quit();
-        return false;
-    }
-
-    window = SDL_CreateWindow(
-        windowTitle,
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        w, h,
-        0
-    );
-    if (!window) {
-        SDL_Log("SDL_CreateWindow Error: %s", SDL_GetError());
-        IMG_Quit();
-        SDL_Quit();
-        return false;
-    }
-
-    renderer = SDL_CreateRenderer(
-        window, -1,
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
-    );
-    if (!renderer) {
-        SDL_Log("SDL_CreateRenderer Error: %s", SDL_GetError());
-        SDL_DestroyWindow(window);
-        IMG_Quit();
-        SDL_Quit();
-        return false;
-    }
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-
-    //
-    SDL_Surface* surf = IMG_Load("assets/greens.png");
-    if (!surf) {
-        SDL_Log("IMG_Load Error: %s", IMG_GetError());
-        return false;
-    }
-    squaresTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    SDL_FreeSurface(surf);
-    if (!squaresTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        return false;
-    }
-    SDL_SetTextureBlendMode(squaresTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    surf = IMG_Load("assets/board.png");
-    if (!surf) {
-        SDL_Log("IMG_Load Error: %s", IMG_GetError());
-        return false;
-    }
-    boardTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    SDL_FreeSurface(surf);
-    if (!boardTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        return false;
-    }
-    SDL_SetTextureBlendMode(boardTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    surf = IMG_Load("assets/redStoneAI.png");
-    if (!surf) {
-        SDL_Log("IMG_Load Error: %s", IMG_GetError());
-        return false;
-    }
-    faceAI = SDL_CreateTextureFromSurface(renderer, surf);
-    SDL_FreeSurface(surf);
-    if (!faceAI) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        return false;
-    }
-    SDL_SetTextureBlendMode(faceAI, SDL_BLENDMODE_BLEND);
-
-    //
-    surf = IMG_Load("assets/face1.png");
-    if (!surf) {
-        SDL_Log("IMG_Load Error: %s", IMG_GetError());
-        return false;
-    }
-    faceHumanW = SDL_CreateTextureFromSurface(renderer, surf);
-    SDL_FreeSurface(surf);
-    if (!faceHumanW) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        return false;
-    }
-    SDL_SetTextureBlendMode(faceHumanW, SDL_BLENDMODE_BLEND);
-
-    //
-    surf = IMG_Load("assets/redStoneThinking.png");
-    if (!surf) {
-        SDL_Log("IMG_Load Error: %s", IMG_GetError());
-        return false;
-    }
-    thinkingStrip = SDL_CreateTextureFromSurface(renderer, surf);
-    SDL_FreeSurface(surf);
-    if (!thinkingStrip) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        return false;
-    }
-    SDL_SetTextureBlendMode(thinkingStrip, SDL_BLENDMODE_BLEND);
-
-    // animation
-    // 310 x 390 71 - 30
-    // 431
-    // 828
-    //     418
-    constexpr int ANIM_W = 310;
-    constexpr int ANIM_H = 390;
-    thinkAnimationAI[0] = {71, 30, ANIM_W, ANIM_H};
-    thinkAnimationAI[1] = {431, 30, ANIM_W, ANIM_H};
-    thinkAnimationAI[2] = {829, 30, ANIM_W, ANIM_H};
-    thinkAnimationAI[3] = {71, 418, ANIM_W, ANIM_H};
-    thinkAnimationAI[4] = {431, 418, ANIM_W, ANIM_H};
-    thinkAnimationAI[5] = {829, 418, ANIM_W, ANIM_H};
-
-    // surf = IMG_Load("assets/wPawn.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // whitePawnTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!whitePawnTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(whitePawnTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/bPawn.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // blackPawnTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!blackPawnTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(blackPawnTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/wRook.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // whiteRookTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!whiteRookTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(whiteRookTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/bRook.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // blackRookTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!blackRookTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(blackRookTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/wKnight.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // whiteKnightTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!whiteKnightTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(whiteKnightTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/bKnight.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // blackKnightTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!blackKnightTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(blackKnightTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/wBishop.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // whiteBishopTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!whiteBishopTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(whiteBishopTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/bBishop.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // blackBishopTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!blackBishopTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(blackBishopTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/wQueen.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // whiteQueenTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!whiteQueenTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(whiteQueenTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/bQueen.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // blackQueenTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!blackQueenTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(blackQueenTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/wKing.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // whiteKingTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!whiteKingTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(whiteKingTexture, SDL_BLENDMODE_BLEND);
-
-    // surf = IMG_Load("assets/bKing.png");
-    // if (!surf) {
-    //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
-    //     return false;
-    // }
-    // blackKingTexture = SDL_CreateTextureFromSurface(renderer, surf);
-    // SDL_FreeSurface(surf);
-    // if (!blackKingTexture) {
-    //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-    //     return false;
-    // }
-    // SDL_SetTextureBlendMode(blackKingTexture, SDL_BLENDMODE_BLEND);
-    int W=300;
-    int H=400;
-    surf = IMG_Load("assets/set.bmp");
-    if (!surf) {
-        SDL_Log("IMG_Load Error: %s", IMG_GetError());
-        return false;
-    }
-
-    //
-    SDL_Surface* pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    SDL_Rect src = { 0*W, 0*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    blackRookTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!blackRookTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(blackRookTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 0*W, 1*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    whiteRookTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!whiteRookTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(whiteRookTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 1*W, 0*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    blackBishopTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!blackBishopTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(blackBishopTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 1*W, 1*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    whiteBishopTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!whiteBishopTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(whiteBishopTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 2*W, 0*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    blackQueenTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!blackQueenTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(blackQueenTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 2*W, 1*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    whiteQueenTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!whiteQueenTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(whiteQueenTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 3*W, 0*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    blackKingTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!blackKingTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(blackKingTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 3*W, 1*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    whiteKingTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!whiteKingTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(whiteKingTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 4*W, 0*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    blackKnightTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!blackKnightTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(blackKnightTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 4*W, 1*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    whiteKnightTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!whiteKnightTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(whiteKnightTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 5*W, 0*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    blackPawnTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!blackPawnTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(blackPawnTexture, SDL_BLENDMODE_BLEND);
-
-    //
-    pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
-    if(!pieceSurf) {
-        SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        return false;
-    }
-    src = { 5*W, 1*H, W, H };
-    SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
-    whitePawnTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
-    if (!whitePawnTexture) {
-        SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
-        SDL_FreeSurface(surf);
-        SDL_FreeSurface(pieceSurf);
-        return false;
-    }
-    SDL_FreeSurface(pieceSurf);
-    SDL_SetTextureBlendMode(whitePawnTexture, SDL_BLENDMODE_BLEND);
-
-
-    // x-coordinate within the texture (pixels from the left)
-    // y-coordinate within the texture (pixels from the top)
-    // width  of that sub-rectangle (in pixels)
-    // height of that sub-rectangle (in pixels)
-    // darkSquareRect = {0, 0, 512, 512};
-    // lightSquareRect = {512, 0, 512, 512};
-
-    // darkSquareRect = {0, 512, 512, 512};
-    // lightSquareRect = {512, 512, 512, 512};
-
-    // lightSquareRect = {512, 512, 512, 512};
-    // darkSquareRect = {512, 0, 512, 512};
-
-    lightSquareRect = {0, 0, 200, 200};
-    darkSquareRect = {200, 0, 200, 200};
-
-    return true;
-}
-
-void GRAPHICS::drawBoard()
-{
-    if (SDL_RenderCopy(renderer, boardTexture, nullptr, nullptr) != 0) {
-        SDL_Log("RenderCopy boardTexture failed: %s", SDL_GetError());
-    }
-}
-
-void GRAPHICS::drawFaces()
-{
-    // ---- AI “face” (animated) ----
-    // 1) Advance frame if enough time has passed
-    Uint32 now = SDL_GetTicks();
-    if (now - lastThinkUpdate >= THINK_FRAME_DURATION) {
-        // move to next frame, wrap at 6
-        thinkFrameIndex = (thinkFrameIndex + 1) % 6;
-        lastThinkUpdate = now;
-    }
-
-    // 2) pick source rect for current frame
-    const SDL_Rect& srcAI = thinkAnimationAI[thinkFrameIndex];
-
-    // 3) destination rect on screen (same as your old faceB)
-    SDL_Rect dstAI = { 69, 0, 79, 79 };
-
-    // 4) render that sub-rect of the thinkingStrip
-    if (SDL_RenderCopy(renderer, thinkingStrip, &srcAI, &dstAI) != 0) {
-        SDL_Log("RenderCopy thinkingStrip failed: %s", SDL_GetError());
-    }
-
-    // ---- Human face (static) ----
-    SDL_Rect dstW = { 69, 948, 79, 77 };
-    if (SDL_RenderCopy(renderer, faceHumanW, nullptr, &dstW) != 0) {
-        SDL_Log("RenderCopy faceHumanW failed: %s", SDL_GetError());
-    }
-}
-
-void GRAPHICS::drawPieces(const CHESS& state) {
-    // Define the scale factor for piece size
-    const float scale = 1.1f;
-    // Base square dimensions
-    const int baseW = SQUARE_WIDTH;
-    const int baseH = SQUARE_HEIGHT;
-    // Compute scaled dimensions
-    const int scaledW = int(baseW * scale);
-    const int scaledH = int(baseH * scale);
-    // Offsets to center the scaled piece in the square
-    const int offsetX = (scaledW - baseW) / 2;
-    const int offsetY = (scaledH - baseH) / 2;
-
-    // 2) Draw each piece scaled by 1.1x and centered
-    for (auto& piece : state.board) {
-        if (!piece) continue; // I skip empty squares
-
-        // I convert file/rank to 0..7 indices
-        int fileIndex = piece->position.file - 'a';
-        int rankIndex0 = piece->position.rank - 1;
-        // I invert rank so rank=1 is on the bottom row
-        int invertedRank = 7 - rankIndex0;
-        // Compute base top-left of the square
-        int baseX = BOARD_START_W + fileIndex * SQUARE_WIDTH + fileIndex * LINE_SIZE;
-        int baseY = BOARD_START_H + invertedRank * SQUARE_HEIGHT + invertedRank * LINE_SIZE;
-
-        // I compute the destination rectangle for the scaled piece, centered over its square
-        SDL_Rect dstRect = {
-            baseX - offsetX,
-            baseY - offsetY,
-            scaledW,
-            scaledH
-        };
-
-        // I pick the correct texture based on piece type and color
-        SDL_Texture* texture = nullptr;
-        switch (piece->type) {
-            case PIECE_TYPE::PAWN:
-                texture = (piece->color == COLOR::WHITE) ? whitePawnTexture : blackPawnTexture;
-                break;
-            case PIECE_TYPE::ROOK:
-                texture = (piece->color == COLOR::WHITE) ? whiteRookTexture : blackRookTexture;
-                break;
-            case PIECE_TYPE::KNIGHT:
-                texture = (piece->color == COLOR::WHITE) ? whiteKnightTexture : blackKnightTexture;
-                break;
-            case PIECE_TYPE::BISHOP:
-                texture = (piece->color == COLOR::WHITE) ? whiteBishopTexture : blackBishopTexture;
-                break;
-            case PIECE_TYPE::QUEEN:
-                texture = (piece->color == COLOR::WHITE) ? whiteQueenTexture : blackQueenTexture;
-                break;
-            case PIECE_TYPE::KING:
-                texture = (piece->color == COLOR::WHITE) ? whiteKingTexture : blackKingTexture;
-                break;
-        }
-        if (!texture) continue; // I guard against missing textures
-
-        // I ensure normal blending and full opacity
-        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-        SDL_SetTextureColorMod(texture, 255, 255, 255);
-        SDL_SetTextureAlphaMod(texture, 255);
-
-        // I draw the scaled piece, centered over its square
-        if (SDL_RenderCopy(renderer, texture, nullptr, &dstRect) != 0) {
-            SDL_Log("RenderCopy piece failed: %s", SDL_GetError());
-        }
-    }
-}
-
-void GRAPHICS::drawPieceHighLight() {
-    // If no square is selected, do nothing
-    if (highLightIndex < 0 || highLightIndex >= 64) {
-        moveFlag = false;
-        return;
-    }
-    // Compute fileIndex (0..7) and rankIndex0 (0..7) from selectedSquareIndex
-    int fileIndex = highLightIndex % 8;    // 0 = 'a', 7 = 'h'
-    int rankIndex0 = highLightIndex / 8;    // 0 = rank 1, 7 = rank 8
-    // Invert rank so rank 1 is bottom row
-    int invertedRank = 7 - rankIndex0;
-
-    // Compute the top-left pixel of the square in window coordinates
-    int squareX = BOARD_START_W + fileIndex * SQUARE_WIDTH + fileIndex * LINE_SIZE;
-    int squareY = BOARD_START_H + invertedRank * SQUARE_HEIGHT + invertedRank * LINE_SIZE;
-
-    SDL_Rect highlightRect = {
-        squareX,
-        squareY,
-        SQUARE_WIDTH,
-        SQUARE_HEIGHT
-    };
-
-    // Draw a green 1px border around highlightRect
-    // I set draw color to green
-    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-    // SDL_RenderDrawRect draws a 1px border. If I want thicker, I could draw nested rects.
-    if (SDL_RenderDrawRect(renderer, &highlightRect) != 0) {
-        SDL_Log("RenderDrawRect highlight failed: %s", SDL_GetError());
-    }
-
-    // thicker border
-    // 2px-thick border by drawing an inner rect inset by 1
-    SDL_Rect innerRect = {
-        highlightRect.x + 1,
-        highlightRect.y + 1,
-        highlightRect.w - 2,
-        highlightRect.h - 2
-    };
-    if (innerRect.w > 0 && innerRect.h > 0) {
-        if (SDL_RenderDrawRect(renderer, &innerRect) != 0) {
-            SDL_Log("RenderDrawRect inner highlight failed: %s", SDL_GetError());
-        }
-    }
-}
-
-void GRAPHICS::drawFilledCircle(int cx, int cy, int radius) {
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer, 128, 128, 128, 192);
-    for (int dy = -radius; dy <= radius; ++dy) {
-        int y = cy + dy;
-        int dx = static_cast<int>(std::sqrt(radius*(double)radius - dy*(double)dy));
-        int x1 = cx - dx;
-        int x2 = cx + dx;
-        SDL_RenderDrawLine(renderer, x1, y, x2, y);
-    }
-}
-
-void GRAPHICS::drawCircleOutline(int cx, int cy, int radius, int thickness) {
-    if (thickness <= 0) return;
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
-
-    // For each “layer” of thickness, draw a 1-pixel circle with radius = baseRadius - offset
-    for (int w = 0; w < thickness; ++w) {
-        int r = radius - w;
-        if (r <= 0) break;
-
-        // Midpoint circle algorithm for radius r:
-        int x = r;
-        int y = 0;
-        int err = 0;
-        while (x >= y) {
-            // Draw the eight symmetric points:
-            SDL_RenderDrawPoint(renderer, cx + x, cy + y);
-            SDL_RenderDrawPoint(renderer, cx + y, cy + x);
-            SDL_RenderDrawPoint(renderer, cx - y, cy + x);
-            SDL_RenderDrawPoint(renderer, cx - x, cy + y);
-            SDL_RenderDrawPoint(renderer, cx - x, cy - y);
-            SDL_RenderDrawPoint(renderer, cx - y, cy - x);
-            SDL_RenderDrawPoint(renderer, cx + y, cy - x);
-            SDL_RenderDrawPoint(renderer, cx + x, cy - y);
-
-            y++;
-            if (err <= 0) {
-                err += 2*y + 1;
-            } else {
-                x--;
-                err -= 2*x + 1;
-            }
-        }
-    }
-}
-
-void GRAPHICS::drawMoveHint(const CHESS& state)
-{
-    if (highLightIndex < 0 || highLightIndex >= 64) return;
-    auto &piecePtr = state.board[highLightIndex];
-    if (!piecePtr) return;
-
-    // Gather legal moves:
-    std::vector<MOVE> legalMoves;
-    legalMoves.reserve(
-        piecePtr->movesCheck.size() +
-        piecePtr->movesCapture.size() +
-        piecePtr->movesDevelopment.size() +
-        piecePtr->movesQuiet.size()
-    );
-    for (auto &m : piecePtr->movesCheck)       legalMoves.push_back(m);
-    for (auto &m : piecePtr->movesCapture)     legalMoves.push_back(m);
-    for (auto &m : piecePtr->movesDevelopment) legalMoves.push_back(m);
-    for (auto &m : piecePtr->movesQuiet)       legalMoves.push_back(m);
-    if (legalMoves.empty()) return;
-
-    // Pre-calc radii once:
-    int minDim = std::min(SQUARE_WIDTH, SQUARE_HEIGHT);
-    int smallRadius   = minDim / 6;
-    int outlineRadius = minDim / 2 - 4;
-    if (outlineRadius < smallRadius + 2) {
-        // ensure outline bigger than small circle
-        outlineRadius = smallRadius + 2;
-    }
-
-    // For clarity, separate lists: quiet vs capture, so we can draw quiet hints below pieces or above as desired.
-    std::vector<std::pair<int,bool>> dests; // pair<toIdx, isCapture>
-    dests.reserve(legalMoves.size());
-    for (auto &m : legalMoves) {
-        int toIdx = m.to.index;
-        if (toIdx < 0 || toIdx >= 64) continue;
-        bool isCap = (state.board[toIdx] != nullptr &&
-                      state.board[toIdx]->color != piecePtr->color);
-        dests.emplace_back(toIdx, isCap);
-    }
-
-    // Now draw. If we want filled hints under pieces and outlines over pieces:
-    //  1) draw quiet (filled) hints
-    //  2) draw pieces
-    //  3) draw capture (outline) hints
-    // In this function we only draw hints; assume caller handles ordering.
-    //
-    // Here, if we call drawMoveHint before drawing pieces, both filled and outline appear under pieces.
-    // If we call after drawing pieces, both appear over pieces.
-    // To draw filled under and outline over, we'd split calls or have flags. For now, we draw both over:
-    for (auto &p : dests) {
-        int toIdx = p.first;
-        bool isCap = p.second;
-        int file = toIdx % 8;
-        int rank = toIdx / 8;
-        // Top-left of square content area:
-        int x = BOARD_START_W + file * (SQUARE_WIDTH + LINE_SIZE) + LINE_SIZE;
-        int y = BOARD_START_H + (7 - rank) * (SQUARE_HEIGHT + LINE_SIZE) + LINE_SIZE;
-        int cx = x + SQUARE_WIDTH / 2;
-        int cy = y + SQUARE_HEIGHT / 2;
-
-        if (isCap) {
-            drawCircleOutline(cx, cy, outlineRadius, 8);
-        } else {
-            drawFilledCircle(cx, cy, smallRadius);
-        }
-    }
-}
-
-void GRAPHICS::clear(const CHESS &state)
-{
-    // I enable blending so PNGs with transparency render correctly
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-
-    // 1) Clear screen and draw the full board background
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderClear(renderer);
-
-    drawBoard();
-    drawFaces();
-    drawPieces(state);
-    drawPieceHighLight();
-    drawMoveHint(state);
-
-    SDL_RenderPresent(renderer);
-}
-
-void GRAPHICS::animateMove(const CHESS& state, int fromIdx, int toIdx, int durationMs) {
-    if (fromIdx < 0 || fromIdx >= 64 || toIdx < 0 || toIdx >= 64) {
-        return;
-    }
-    // 1) Get the moving piece pointer:
-    const auto& piecePtr = state.board[fromIdx];
-    if (!piecePtr) return;
-
-    // 2) Select the correct texture for this piece:
-    SDL_Texture* moveTex = nullptr;
-    switch (piecePtr->type) {
-        case PIECE_TYPE::PAWN:
-            moveTex = (piecePtr->color == COLOR::WHITE) ? whitePawnTexture : blackPawnTexture;
-            break;
-        case PIECE_TYPE::ROOK:
-            moveTex = (piecePtr->color == COLOR::WHITE) ? whiteRookTexture : blackRookTexture;
-            break;
-        case PIECE_TYPE::KNIGHT:
-            moveTex = (piecePtr->color == COLOR::WHITE) ? whiteKnightTexture : blackKnightTexture;
-            break;
-        case PIECE_TYPE::BISHOP:
-            moveTex = (piecePtr->color == COLOR::WHITE) ? whiteBishopTexture : blackBishopTexture;
-            break;
-        case PIECE_TYPE::QUEEN:
-            moveTex = (piecePtr->color == COLOR::WHITE) ? whiteQueenTexture : blackQueenTexture;
-            break;
-        case PIECE_TYPE::KING:
-            moveTex = (piecePtr->color == COLOR::WHITE) ? whiteKingTexture : blackKingTexture;
-            break;
-    }
-    if (!moveTex) return;
-
-    // 3) Compute start & end top-left coordinates of the squares:
-    int startX, startY, endX, endY;
-    computeSquareTopLeft(fromIdx, startX, startY);
-    computeSquareTopLeft(toIdx,   endX,   endY);
-
-    // 4) Prepare scaling:
-    const float scale = 1.1f;
-    const int baseW = SQUARE_WIDTH;
-    const int baseH = SQUARE_HEIGHT;
-    const int scaledW = int(baseW * scale);
-    const int scaledH = int(baseH * scale);
-    // Offsets so that scaled piece is centered in the square:
-    const int offsetX = (scaledW - baseW) / 2;
-    const int offsetY = (scaledH - baseH) / 2;
-
-    // 5) Animation timing:
-    const int fps = 60;
-    const int frameDelayMs = 1000 / fps;
-    int frames = (durationMs + frameDelayMs - 1) / frameDelayMs;
-    if (frames < 1) frames = 1;
-    Uint32 startTime = SDL_GetTicks();
-
-    // 6) Animation loop:
-    for (;;) {
-        Uint32 now = SDL_GetTicks();
-        float elapsed = float(now - startTime);
-        float t = elapsed / float(durationMs);
-        if (t > 1.0f) t = 1.0f;
-
-        // Interpolated top-left of moving piece’s square:
-        float curXf = startX + (endX - startX) * t;
-        float curYf = startY + (endY - startY) * t;
-        int curX = int(curXf + 0.5f);
-        int curY = int(curYf + 0.5f);
-
-        // 7) Draw board background:
-        SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, boardTexture, nullptr, nullptr);
-
-        drawFaces();
-
-        // 8) Draw all other pieces at their normal (scaled) positions:
-        for (int idx = 0; idx < 64; ++idx) {
-            if (idx == fromIdx) continue; // skip the moving piece at origin
-            const auto& opPtr = state.board[idx];
-            if (!opPtr) continue;
-            SDL_Texture* tex = nullptr;
-            switch (opPtr->type) {
-                case PIECE_TYPE::PAWN:
-                    tex = (opPtr->color == COLOR::WHITE) ? whitePawnTexture : blackPawnTexture;
-                    break;
-                case PIECE_TYPE::ROOK:
-                    tex = (opPtr->color == COLOR::WHITE) ? whiteRookTexture : blackRookTexture;
-                    break;
-                case PIECE_TYPE::KNIGHT:
-                    tex = (opPtr->color == COLOR::WHITE) ? whiteKnightTexture : blackKnightTexture;
-                    break;
-                case PIECE_TYPE::BISHOP:
-                    tex = (opPtr->color == COLOR::WHITE) ? whiteBishopTexture : blackBishopTexture;
-                    break;
-                case PIECE_TYPE::QUEEN:
-                    tex = (opPtr->color == COLOR::WHITE) ? whiteQueenTexture : blackQueenTexture;
-                    break;
-                case PIECE_TYPE::KING:
-                    tex = (opPtr->color == COLOR::WHITE) ? whiteKingTexture : blackKingTexture;
-                    break;
-                default:
-                    continue;
-            }
-            if (!tex) continue;
-            int px, py;
-            computeSquareTopLeft(idx, px, py);
-            // Center scaled piece in the square:
-            SDL_Rect destRect = { px - offsetX, py - offsetY, scaledW, scaledH };
-            SDL_SetTextureColorMod(tex, 255,255,255);
-            SDL_SetTextureAlphaMod(tex, 255);
-            SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
-            SDL_RenderCopy(renderer, tex, nullptr, &destRect);
-        }
-
-        // 9) Draw the moving piece at interpolated (curX, curY), scaled+centered:
-        SDL_Rect movingDest = { curX - offsetX, curY - offsetY, scaledW, scaledH };
-        SDL_SetTextureColorMod(moveTex, 255,255,255);
-        SDL_SetTextureAlphaMod(moveTex, 255);
-        SDL_SetTextureBlendMode(moveTex, SDL_BLENDMODE_BLEND);
-        SDL_RenderCopy(renderer, moveTex, nullptr, &movingDest);
-
-        // 10) Present:
-        SDL_RenderPresent(renderer);
-
-        // 11) Break if done:
-        if (t >= 1.0f) break;
-
-        // 12) Delay until next frame:
-        SDL_Delay(frameDelayMs);
-    }
-
-    // After this returns, caller should call chess.movePiece(...) to finalize the move in the model.
-}
+// #include "graphic.h"
+
+// // Computes the top-left pixel coordinate of square index [0..63],
+// // accounting for BOARD_START offsets, square size, and line thickness.
+// // - squareIdx: 0..63, where 0=a1, 1=b1, ..., 7=h1, 8=a2, ..., 63=h8.
+// // - outX, outY: filled with pixel coordinates where the piece-drawing destRect should start.
+// static void computeSquareTopLeft(int squareIdx, int& outX, int& outY) {
+//     int file = squareIdx % 8;   // 0..7 for a..h
+//     int rank = squareIdx / 8;   // 0..7 for rank1..rank8
+//     // X: start + file * (square width + line thickness)
+//     outX = BOARD_START_W + file * (SQUARE_WIDTH + LINE_SIZE);
+//     // Y: invert rank so rank=0 (a1) is bottom, rank=7 (a8) is top
+//     outY = BOARD_START_H + (7 - rank) * (SQUARE_HEIGHT + LINE_SIZE);
+// }
+
+// void GRAPHICS::getHighlightIndex(int index) {
+//     highLightIndex = index;
+//     moveFlag = !moveFlag;
+// }
+
+// GRAPHICS::~GRAPHICS() {
+//     if(renderer) {SDL_DestroyRenderer(renderer);}
+//     if(window) {SDL_DestroyWindow(window);}
+//     if(squaresTexture) {SDL_DestroyTexture(squaresTexture);}
+//     if(whitePawnTexture) {SDL_DestroyTexture(whitePawnTexture);}
+//     if(blackPawnTexture) {SDL_DestroyTexture(blackPawnTexture);}
+//     if(whiteRookTexture) {SDL_DestroyTexture(whiteRookTexture);}
+//     if(blackRookTexture) {SDL_DestroyTexture(blackRookTexture);}
+//     if(whiteKnightTexture) {SDL_DestroyTexture(whiteKnightTexture);}
+//     if(blackKnightTexture) {SDL_DestroyTexture(blackKnightTexture);}
+//     if(whiteBishopTexture) {SDL_DestroyTexture(whiteBishopTexture);}
+//     if(blackBishopTexture) {SDL_DestroyTexture(blackBishopTexture);}
+//     if(whiteQueenTexture) {SDL_DestroyTexture(whiteQueenTexture);}
+//     if(blackQueenTexture) {SDL_DestroyTexture(blackQueenTexture);}
+//     if(whiteKingTexture) {SDL_DestroyTexture(whiteKingTexture);}
+//     if(blackKingTexture) {SDL_DestroyTexture(blackKingTexture);}
+//     IMG_Quit();
+//     SDL_Quit();
+// }
+
+// bool GRAPHICS::init(const char *windowTitle, int w, int h)
+// {
+//     moveFlag = false;
+//     highLightIndex = -1;
+
+//     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+//         SDL_Log("SDL_Init Error: %s", SDL_GetError());
+//         return false;
+//     }
+
+//     if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) {
+//         SDL_Log("IMG_Init Error: %s", IMG_GetError());
+//         SDL_Quit();
+//         return false;
+//     }
+
+//     window = SDL_CreateWindow(
+//         windowTitle,
+//         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+//         w, h,
+//         0
+//     );
+//     if (!window) {
+//         SDL_Log("SDL_CreateWindow Error: %s", SDL_GetError());
+//         IMG_Quit();
+//         SDL_Quit();
+//         return false;
+//     }
+
+//     renderer = SDL_CreateRenderer(
+//         window, -1,
+//         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
+//     );
+//     if (!renderer) {
+//         SDL_Log("SDL_CreateRenderer Error: %s", SDL_GetError());
+//         SDL_DestroyWindow(window);
+//         IMG_Quit();
+//         SDL_Quit();
+//         return false;
+//     }
+//     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+//     //
+//     SDL_Surface* surf = IMG_Load("assets/greens.png");
+//     if (!surf) {
+//         SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//         return false;
+//     }
+//     squaresTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     SDL_FreeSurface(surf);
+//     if (!squaresTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         return false;
+//     }
+//     SDL_SetTextureBlendMode(squaresTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     surf = IMG_Load("assets/board.png");
+//     if (!surf) {
+//         SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//         return false;
+//     }
+//     boardTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     SDL_FreeSurface(surf);
+//     if (!boardTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         return false;
+//     }
+//     SDL_SetTextureBlendMode(boardTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     surf = IMG_Load("assets/redStoneAI.png");
+//     if (!surf) {
+//         SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//         return false;
+//     }
+//     faceAI = SDL_CreateTextureFromSurface(renderer, surf);
+//     SDL_FreeSurface(surf);
+//     if (!faceAI) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         return false;
+//     }
+//     SDL_SetTextureBlendMode(faceAI, SDL_BLENDMODE_BLEND);
+
+//     //
+//     surf = IMG_Load("assets/face1.png");
+//     if (!surf) {
+//         SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//         return false;
+//     }
+//     faceHumanW = SDL_CreateTextureFromSurface(renderer, surf);
+//     SDL_FreeSurface(surf);
+//     if (!faceHumanW) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         return false;
+//     }
+//     SDL_SetTextureBlendMode(faceHumanW, SDL_BLENDMODE_BLEND);
+
+//     //
+//     surf = IMG_Load("assets/redStoneThinking.png");
+//     if (!surf) {
+//         SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//         return false;
+//     }
+//     thinkingStrip = SDL_CreateTextureFromSurface(renderer, surf);
+//     SDL_FreeSurface(surf);
+//     if (!thinkingStrip) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         return false;
+//     }
+//     SDL_SetTextureBlendMode(thinkingStrip, SDL_BLENDMODE_BLEND);
+
+//     // animation
+//     // 310 x 390 71 - 30
+//     // 431
+//     // 828
+//     //     418
+//     constexpr int ANIM_W = 310;
+//     constexpr int ANIM_H = 390;
+//     thinkAnimationAI[0] = {71, 30, ANIM_W, ANIM_H};
+//     thinkAnimationAI[1] = {431, 30, ANIM_W, ANIM_H};
+//     thinkAnimationAI[2] = {829, 30, ANIM_W, ANIM_H};
+//     thinkAnimationAI[3] = {71, 418, ANIM_W, ANIM_H};
+//     thinkAnimationAI[4] = {431, 418, ANIM_W, ANIM_H};
+//     thinkAnimationAI[5] = {829, 418, ANIM_W, ANIM_H};
+
+//     // surf = IMG_Load("assets/wPawn.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // whitePawnTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!whitePawnTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(whitePawnTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/bPawn.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // blackPawnTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!blackPawnTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(blackPawnTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/wRook.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // whiteRookTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!whiteRookTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(whiteRookTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/bRook.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // blackRookTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!blackRookTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(blackRookTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/wKnight.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // whiteKnightTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!whiteKnightTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(whiteKnightTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/bKnight.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // blackKnightTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!blackKnightTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(blackKnightTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/wBishop.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // whiteBishopTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!whiteBishopTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(whiteBishopTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/bBishop.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // blackBishopTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!blackBishopTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(blackBishopTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/wQueen.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // whiteQueenTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!whiteQueenTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(whiteQueenTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/bQueen.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // blackQueenTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!blackQueenTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(blackQueenTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/wKing.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // whiteKingTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!whiteKingTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(whiteKingTexture, SDL_BLENDMODE_BLEND);
+
+//     // surf = IMG_Load("assets/bKing.png");
+//     // if (!surf) {
+//     //     SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//     //     return false;
+//     // }
+//     // blackKingTexture = SDL_CreateTextureFromSurface(renderer, surf);
+//     // SDL_FreeSurface(surf);
+//     // if (!blackKingTexture) {
+//     //     SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//     //     return false;
+//     // }
+//     // SDL_SetTextureBlendMode(blackKingTexture, SDL_BLENDMODE_BLEND);
+//     int W=300;
+//     int H=400;
+//     surf = IMG_Load("assets/set.bmp");
+//     if (!surf) {
+//         SDL_Log("IMG_Load Error: %s", IMG_GetError());
+//         return false;
+//     }
+
+//     //
+//     SDL_Surface* pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     SDL_Rect src = { 0*W, 0*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     blackRookTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!blackRookTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(blackRookTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 0*W, 1*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     whiteRookTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!whiteRookTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(whiteRookTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 1*W, 0*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     blackBishopTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!blackBishopTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(blackBishopTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 1*W, 1*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     whiteBishopTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!whiteBishopTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(whiteBishopTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 2*W, 0*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     blackQueenTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!blackQueenTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(blackQueenTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 2*W, 1*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     whiteQueenTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!whiteQueenTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(whiteQueenTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 3*W, 0*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     blackKingTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!blackKingTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(blackKingTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 3*W, 1*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     whiteKingTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!whiteKingTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(whiteKingTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 4*W, 0*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     blackKnightTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!blackKnightTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(blackKnightTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 4*W, 1*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     whiteKnightTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!whiteKnightTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(whiteKnightTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 5*W, 0*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     blackPawnTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!blackPawnTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(blackPawnTexture, SDL_BLENDMODE_BLEND);
+
+//     //
+//     pieceSurf = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, surf->format->format);
+//     if(!pieceSurf) {
+//         SDL_Log("SDL_CreateRGBSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         return false;
+//     }
+//     src = { 5*W, 1*H, W, H };
+//     SDL_BlitSurface(surf, &src, pieceSurf, nullptr);  // copy region
+//     whitePawnTexture = SDL_CreateTextureFromSurface(renderer, pieceSurf);
+//     if (!whitePawnTexture) {
+//         SDL_Log("SDL_CreateTextureFromSurface Error: %s", SDL_GetError());
+//         SDL_FreeSurface(surf);
+//         SDL_FreeSurface(pieceSurf);
+//         return false;
+//     }
+//     SDL_FreeSurface(pieceSurf);
+//     SDL_SetTextureBlendMode(whitePawnTexture, SDL_BLENDMODE_BLEND);
+
+
+//     // x-coordinate within the texture (pixels from the left)
+//     // y-coordinate within the texture (pixels from the top)
+//     // width  of that sub-rectangle (in pixels)
+//     // height of that sub-rectangle (in pixels)
+//     // darkSquareRect = {0, 0, 512, 512};
+//     // lightSquareRect = {512, 0, 512, 512};
+
+//     // darkSquareRect = {0, 512, 512, 512};
+//     // lightSquareRect = {512, 512, 512, 512};
+
+//     // lightSquareRect = {512, 512, 512, 512};
+//     // darkSquareRect = {512, 0, 512, 512};
+
+//     lightSquareRect = {0, 0, 200, 200};
+//     darkSquareRect = {200, 0, 200, 200};
+
+//     return true;
+// }
+
+// void GRAPHICS::drawBoard()
+// {
+//     if (SDL_RenderCopy(renderer, boardTexture, nullptr, nullptr) != 0) {
+//         SDL_Log("RenderCopy boardTexture failed: %s", SDL_GetError());
+//     }
+// }
+
+// void GRAPHICS::drawFaces()
+// {
+//     // ---- AI “face” (animated) ----
+//     // 1) Advance frame if enough time has passed
+//     Uint32 now = SDL_GetTicks();
+//     if (now - lastThinkUpdate >= THINK_FRAME_DURATION) {
+//         // move to next frame, wrap at 6
+//         thinkFrameIndex = (thinkFrameIndex + 1) % 6;
+//         lastThinkUpdate = now;
+//     }
+
+//     // 2) pick source rect for current frame
+//     const SDL_Rect& srcAI = thinkAnimationAI[thinkFrameIndex];
+
+//     // 3) destination rect on screen (same as your old faceB)
+//     SDL_Rect dstAI = { 69, 0, 79, 79 };
+
+//     // 4) render that sub-rect of the thinkingStrip
+//     if (SDL_RenderCopy(renderer, thinkingStrip, &srcAI, &dstAI) != 0) {
+//         SDL_Log("RenderCopy thinkingStrip failed: %s", SDL_GetError());
+//     }
+
+//     // ---- Human face (static) ----
+//     SDL_Rect dstW = { 69, 948, 79, 77 };
+//     if (SDL_RenderCopy(renderer, faceHumanW, nullptr, &dstW) != 0) {
+//         SDL_Log("RenderCopy faceHumanW failed: %s", SDL_GetError());
+//     }
+// }
+
+// void GRAPHICS::drawPieces(const CHESS& state) {
+//     // Define the scale factor for piece size
+//     const float scale = 1.1f;
+//     // Base square dimensions
+//     const int baseW = SQUARE_WIDTH;
+//     const int baseH = SQUARE_HEIGHT;
+//     // Compute scaled dimensions
+//     const int scaledW = int(baseW * scale);
+//     const int scaledH = int(baseH * scale);
+//     // Offsets to center the scaled piece in the square
+//     const int offsetX = (scaledW - baseW) / 2;
+//     const int offsetY = (scaledH - baseH) / 2;
+
+//     // 2) Draw each piece scaled by 1.1x and centered
+//     for (auto& piece : state.board) {
+//         if (!piece) continue; // I skip empty squares
+
+//         // I convert file/rank to 0..7 indices
+//         int fileIndex = piece->position.file - 'a';
+//         int rankIndex0 = piece->position.rank - 1;
+//         // I invert rank so rank=1 is on the bottom row
+//         int invertedRank = 7 - rankIndex0;
+//         // Compute base top-left of the square
+//         int baseX = BOARD_START_W + fileIndex * SQUARE_WIDTH + fileIndex * LINE_SIZE;
+//         int baseY = BOARD_START_H + invertedRank * SQUARE_HEIGHT + invertedRank * LINE_SIZE;
+
+//         // I compute the destination rectangle for the scaled piece, centered over its square
+//         SDL_Rect dstRect = {
+//             baseX - offsetX,
+//             baseY - offsetY,
+//             scaledW,
+//             scaledH
+//         };
+
+//         // I pick the correct texture based on piece type and color
+//         SDL_Texture* texture = nullptr;
+//         switch (piece->type) {
+//             case PIECE_TYPE::PAWN:
+//                 texture = (piece->color == COLOR::WHITE) ? whitePawnTexture : blackPawnTexture;
+//                 break;
+//             case PIECE_TYPE::ROOK:
+//                 texture = (piece->color == COLOR::WHITE) ? whiteRookTexture : blackRookTexture;
+//                 break;
+//             case PIECE_TYPE::KNIGHT:
+//                 texture = (piece->color == COLOR::WHITE) ? whiteKnightTexture : blackKnightTexture;
+//                 break;
+//             case PIECE_TYPE::BISHOP:
+//                 texture = (piece->color == COLOR::WHITE) ? whiteBishopTexture : blackBishopTexture;
+//                 break;
+//             case PIECE_TYPE::QUEEN:
+//                 texture = (piece->color == COLOR::WHITE) ? whiteQueenTexture : blackQueenTexture;
+//                 break;
+//             case PIECE_TYPE::KING:
+//                 texture = (piece->color == COLOR::WHITE) ? whiteKingTexture : blackKingTexture;
+//                 break;
+//         }
+//         if (!texture) continue; // I guard against missing textures
+
+//         // I ensure normal blending and full opacity
+//         SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+//         SDL_SetTextureColorMod(texture, 255, 255, 255);
+//         SDL_SetTextureAlphaMod(texture, 255);
+
+//         // I draw the scaled piece, centered over its square
+//         if (SDL_RenderCopy(renderer, texture, nullptr, &dstRect) != 0) {
+//             SDL_Log("RenderCopy piece failed: %s", SDL_GetError());
+//         }
+//     }
+// }
+
+// void GRAPHICS::drawPieceHighLight() {
+//     // If no square is selected, do nothing
+//     if (highLightIndex < 0 || highLightIndex >= 64) {
+//         moveFlag = false;
+//         return;
+//     }
+//     // Compute fileIndex (0..7) and rankIndex0 (0..7) from selectedSquareIndex
+//     int fileIndex = highLightIndex % 8;    // 0 = 'a', 7 = 'h'
+//     int rankIndex0 = highLightIndex / 8;    // 0 = rank 1, 7 = rank 8
+//     // Invert rank so rank 1 is bottom row
+//     int invertedRank = 7 - rankIndex0;
+
+//     // Compute the top-left pixel of the square in window coordinates
+//     int squareX = BOARD_START_W + fileIndex * SQUARE_WIDTH + fileIndex * LINE_SIZE;
+//     int squareY = BOARD_START_H + invertedRank * SQUARE_HEIGHT + invertedRank * LINE_SIZE;
+
+//     SDL_Rect highlightRect = {
+//         squareX,
+//         squareY,
+//         SQUARE_WIDTH,
+//         SQUARE_HEIGHT
+//     };
+
+//     // Draw a green 1px border around highlightRect
+//     // I set draw color to green
+//     SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+//     // SDL_RenderDrawRect draws a 1px border. If I want thicker, I could draw nested rects.
+//     if (SDL_RenderDrawRect(renderer, &highlightRect) != 0) {
+//         SDL_Log("RenderDrawRect highlight failed: %s", SDL_GetError());
+//     }
+
+//     // thicker border
+//     // 2px-thick border by drawing an inner rect inset by 1
+//     SDL_Rect innerRect = {
+//         highlightRect.x + 1,
+//         highlightRect.y + 1,
+//         highlightRect.w - 2,
+//         highlightRect.h - 2
+//     };
+//     if (innerRect.w > 0 && innerRect.h > 0) {
+//         if (SDL_RenderDrawRect(renderer, &innerRect) != 0) {
+//             SDL_Log("RenderDrawRect inner highlight failed: %s", SDL_GetError());
+//         }
+//     }
+// }
+
+// void GRAPHICS::drawFilledCircle(int cx, int cy, int radius) {
+//     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+//     SDL_SetRenderDrawColor(renderer, 128, 128, 128, 192);
+//     for (int dy = -radius; dy <= radius; ++dy) {
+//         int y = cy + dy;
+//         int dx = static_cast<int>(std::sqrt(radius*(double)radius - dy*(double)dy));
+//         int x1 = cx - dx;
+//         int x2 = cx + dx;
+//         SDL_RenderDrawLine(renderer, x1, y, x2, y);
+//     }
+// }
+
+// void GRAPHICS::drawCircleOutline(int cx, int cy, int radius, int thickness) {
+//     if (thickness <= 0) return;
+//     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+//     SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
+
+//     // For each “layer” of thickness, draw a 1-pixel circle with radius = baseRadius - offset
+//     for (int w = 0; w < thickness; ++w) {
+//         int r = radius - w;
+//         if (r <= 0) break;
+
+//         // Midpoint circle algorithm for radius r:
+//         int x = r;
+//         int y = 0;
+//         int err = 0;
+//         while (x >= y) {
+//             // Draw the eight symmetric points:
+//             SDL_RenderDrawPoint(renderer, cx + x, cy + y);
+//             SDL_RenderDrawPoint(renderer, cx + y, cy + x);
+//             SDL_RenderDrawPoint(renderer, cx - y, cy + x);
+//             SDL_RenderDrawPoint(renderer, cx - x, cy + y);
+//             SDL_RenderDrawPoint(renderer, cx - x, cy - y);
+//             SDL_RenderDrawPoint(renderer, cx - y, cy - x);
+//             SDL_RenderDrawPoint(renderer, cx + y, cy - x);
+//             SDL_RenderDrawPoint(renderer, cx + x, cy - y);
+
+//             y++;
+//             if (err <= 0) {
+//                 err += 2*y + 1;
+//             } else {
+//                 x--;
+//                 err -= 2*x + 1;
+//             }
+//         }
+//     }
+// }
+
+// void GRAPHICS::drawMoveHint(const CHESS& state)
+// {
+//     if (highLightIndex < 0 || highLightIndex >= 64) return;
+//     auto &piecePtr = state.board[highLightIndex];
+//     if (!piecePtr) return;
+
+//     // Gather legal moves:
+//     std::vector<MOVE> legalMoves;
+//     legalMoves.reserve(
+//         piecePtr->movesCheck.size() +
+//         piecePtr->movesCapture.size() +
+//         piecePtr->movesDevelopment.size() +
+//         piecePtr->movesQuiet.size()
+//     );
+//     for (auto &m : piecePtr->movesCheck)       legalMoves.push_back(m);
+//     for (auto &m : piecePtr->movesCapture)     legalMoves.push_back(m);
+//     for (auto &m : piecePtr->movesDevelopment) legalMoves.push_back(m);
+//     for (auto &m : piecePtr->movesQuiet)       legalMoves.push_back(m);
+//     if (legalMoves.empty()) return;
+
+//     // Pre-calc radii once:
+//     int minDim = std::min(SQUARE_WIDTH, SQUARE_HEIGHT);
+//     int smallRadius   = minDim / 6;
+//     int outlineRadius = minDim / 2 - 4;
+//     if (outlineRadius < smallRadius + 2) {
+//         // ensure outline bigger than small circle
+//         outlineRadius = smallRadius + 2;
+//     }
+
+//     // For clarity, separate lists: quiet vs capture, so we can draw quiet hints below pieces or above as desired.
+//     std::vector<std::pair<int,bool>> dests; // pair<toIdx, isCapture>
+//     dests.reserve(legalMoves.size());
+//     for (auto &m : legalMoves) {
+//         int toIdx = m.to.index;
+//         if (toIdx < 0 || toIdx >= 64) continue;
+//         bool isCap = (state.board[toIdx] != nullptr &&
+//                       state.board[toIdx]->color != piecePtr->color);
+//         dests.emplace_back(toIdx, isCap);
+//     }
+
+//     // Now draw. If we want filled hints under pieces and outlines over pieces:
+//     //  1) draw quiet (filled) hints
+//     //  2) draw pieces
+//     //  3) draw capture (outline) hints
+//     // In this function we only draw hints; assume caller handles ordering.
+//     //
+//     // Here, if we call drawMoveHint before drawing pieces, both filled and outline appear under pieces.
+//     // If we call after drawing pieces, both appear over pieces.
+//     // To draw filled under and outline over, we'd split calls or have flags. For now, we draw both over:
+//     for (auto &p : dests) {
+//         int toIdx = p.first;
+//         bool isCap = p.second;
+//         int file = toIdx % 8;
+//         int rank = toIdx / 8;
+//         // Top-left of square content area:
+//         int x = BOARD_START_W + file * (SQUARE_WIDTH + LINE_SIZE) + LINE_SIZE;
+//         int y = BOARD_START_H + (7 - rank) * (SQUARE_HEIGHT + LINE_SIZE) + LINE_SIZE;
+//         int cx = x + SQUARE_WIDTH / 2;
+//         int cy = y + SQUARE_HEIGHT / 2;
+
+//         if (isCap) {
+//             drawCircleOutline(cx, cy, outlineRadius, 8);
+//         } else {
+//             drawFilledCircle(cx, cy, smallRadius);
+//         }
+//     }
+// }
+
+// void GRAPHICS::clear(const CHESS &state)
+// {
+//     // I enable blending so PNGs with transparency render correctly
+//     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+//     // 1) Clear screen and draw the full board background
+//     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+//     SDL_RenderClear(renderer);
+
+//     drawBoard();
+//     drawFaces();
+//     drawPieces(state);
+//     drawPieceHighLight();
+//     drawMoveHint(state);
+
+//     SDL_RenderPresent(renderer);
+// }
+
+// void GRAPHICS::animateMove(const CHESS& state, int fromIdx, int toIdx, int durationMs) {
+//     if (fromIdx < 0 || fromIdx >= 64 || toIdx < 0 || toIdx >= 64) {
+//         return;
+//     }
+//     // 1) Get the moving piece pointer:
+//     const auto& piecePtr = state.board[fromIdx];
+//     if (!piecePtr) return;
+
+//     // 2) Select the correct texture for this piece:
+//     SDL_Texture* moveTex = nullptr;
+//     switch (piecePtr->type) {
+//         case PIECE_TYPE::PAWN:
+//             moveTex = (piecePtr->color == COLOR::WHITE) ? whitePawnTexture : blackPawnTexture;
+//             break;
+//         case PIECE_TYPE::ROOK:
+//             moveTex = (piecePtr->color == COLOR::WHITE) ? whiteRookTexture : blackRookTexture;
+//             break;
+//         case PIECE_TYPE::KNIGHT:
+//             moveTex = (piecePtr->color == COLOR::WHITE) ? whiteKnightTexture : blackKnightTexture;
+//             break;
+//         case PIECE_TYPE::BISHOP:
+//             moveTex = (piecePtr->color == COLOR::WHITE) ? whiteBishopTexture : blackBishopTexture;
+//             break;
+//         case PIECE_TYPE::QUEEN:
+//             moveTex = (piecePtr->color == COLOR::WHITE) ? whiteQueenTexture : blackQueenTexture;
+//             break;
+//         case PIECE_TYPE::KING:
+//             moveTex = (piecePtr->color == COLOR::WHITE) ? whiteKingTexture : blackKingTexture;
+//             break;
+//     }
+//     if (!moveTex) return;
+
+//     // 3) Compute start & end top-left coordinates of the squares:
+//     int startX, startY, endX, endY;
+//     computeSquareTopLeft(fromIdx, startX, startY);
+//     computeSquareTopLeft(toIdx,   endX,   endY);
+
+//     // 4) Prepare scaling:
+//     const float scale = 1.1f;
+//     const int baseW = SQUARE_WIDTH;
+//     const int baseH = SQUARE_HEIGHT;
+//     const int scaledW = int(baseW * scale);
+//     const int scaledH = int(baseH * scale);
+//     // Offsets so that scaled piece is centered in the square:
+//     const int offsetX = (scaledW - baseW) / 2;
+//     const int offsetY = (scaledH - baseH) / 2;
+
+//     // 5) Animation timing:
+//     const int fps = 60;
+//     const int frameDelayMs = 1000 / fps;
+//     int frames = (durationMs + frameDelayMs - 1) / frameDelayMs;
+//     if (frames < 1) frames = 1;
+//     Uint32 startTime = SDL_GetTicks();
+
+//     // 6) Animation loop:
+//     for (;;) {
+//         Uint32 now = SDL_GetTicks();
+//         float elapsed = float(now - startTime);
+//         float t = elapsed / float(durationMs);
+//         if (t > 1.0f) t = 1.0f;
+
+//         // Interpolated top-left of moving piece’s square:
+//         float curXf = startX + (endX - startX) * t;
+//         float curYf = startY + (endY - startY) * t;
+//         int curX = int(curXf + 0.5f);
+//         int curY = int(curYf + 0.5f);
+
+//         // 7) Draw board background:
+//         SDL_RenderClear(renderer);
+//         SDL_RenderCopy(renderer, boardTexture, nullptr, nullptr);
+
+//         drawFaces();
+
+//         // 8) Draw all other pieces at their normal (scaled) positions:
+//         for (int idx = 0; idx < 64; ++idx) {
+//             if (idx == fromIdx) continue; // skip the moving piece at origin
+//             const auto& opPtr = state.board[idx];
+//             if (!opPtr) continue;
+//             SDL_Texture* tex = nullptr;
+//             switch (opPtr->type) {
+//                 case PIECE_TYPE::PAWN:
+//                     tex = (opPtr->color == COLOR::WHITE) ? whitePawnTexture : blackPawnTexture;
+//                     break;
+//                 case PIECE_TYPE::ROOK:
+//                     tex = (opPtr->color == COLOR::WHITE) ? whiteRookTexture : blackRookTexture;
+//                     break;
+//                 case PIECE_TYPE::KNIGHT:
+//                     tex = (opPtr->color == COLOR::WHITE) ? whiteKnightTexture : blackKnightTexture;
+//                     break;
+//                 case PIECE_TYPE::BISHOP:
+//                     tex = (opPtr->color == COLOR::WHITE) ? whiteBishopTexture : blackBishopTexture;
+//                     break;
+//                 case PIECE_TYPE::QUEEN:
+//                     tex = (opPtr->color == COLOR::WHITE) ? whiteQueenTexture : blackQueenTexture;
+//                     break;
+//                 case PIECE_TYPE::KING:
+//                     tex = (opPtr->color == COLOR::WHITE) ? whiteKingTexture : blackKingTexture;
+//                     break;
+//                 default:
+//                     continue;
+//             }
+//             if (!tex) continue;
+//             int px, py;
+//             computeSquareTopLeft(idx, px, py);
+//             // Center scaled piece in the square:
+//             SDL_Rect destRect = { px - offsetX, py - offsetY, scaledW, scaledH };
+//             SDL_SetTextureColorMod(tex, 255,255,255);
+//             SDL_SetTextureAlphaMod(tex, 255);
+//             SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+//             SDL_RenderCopy(renderer, tex, nullptr, &destRect);
+//         }
+
+//         // 9) Draw the moving piece at interpolated (curX, curY), scaled+centered:
+//         SDL_Rect movingDest = { curX - offsetX, curY - offsetY, scaledW, scaledH };
+//         SDL_SetTextureColorMod(moveTex, 255,255,255);
+//         SDL_SetTextureAlphaMod(moveTex, 255);
+//         SDL_SetTextureBlendMode(moveTex, SDL_BLENDMODE_BLEND);
+//         SDL_RenderCopy(renderer, moveTex, nullptr, &movingDest);
+
+//         // 10) Present:
+//         SDL_RenderPresent(renderer);
+
+//         // 11) Break if done:
+//         if (t >= 1.0f) break;
+
+//         // 12) Delay until next frame:
+//         SDL_Delay(frameDelayMs);
+//     }
+
+//     // After this returns, caller should call chess.movePiece(...) to finalize the move in the model.
+// }

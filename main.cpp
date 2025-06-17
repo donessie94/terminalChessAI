@@ -1,118 +1,59 @@
-#include "graphics/graphic.h"
-#include "inputHandler/inputHandler.h"
-#include "sounds/effects.h"
+#include"utils/miscellanous.h"
+#include"logic/chess_0x88.h"
+#include <chrono>
 
-constexpr int SCREEN_WIDTH  = 1024; // Width of the window in pixels
-constexpr int SCREEN_HEIGHT = 1024; // Height of the window in pixels
+// Forward declaration of print functions, adjust signatures as needed:
+void print_mini_board(const int board[128], bool turn, int castle_right);
+void print_attack_map(const int board[128], bool turn);
 
-int main(int argc, char* argv[])
+int main()
 {
-    //audio initialization
-    if (SDL_Init(SDL_INIT_AUDIO) != 0) {
-        SDL_Log("SDL_Init error: %s", SDL_GetError());
-        return 1;
-    }
-    if (!EFFECTS::initAudio()) {
-        SDL_Log("Audio init failed, continuing without sound.");
-    }
+    // Capture overall start time
+    auto t_prog_start = std::chrono::high_resolution_clock::now();
 
-    // Load your sound files (paths relative to executable working dir or absolute):
-    EFFECTS::loadSounds("assets/sounds/move.wav",
-                        "assets/sounds/capture.wav",
-                        "assets/sounds/errorMove.wav",
-                        "assets/sounds/check_alert.wav",
-                        "assets/sounds/background.wav");
+    // Construct position from FEN and measure its cost
+    auto t_construct_start = std::chrono::high_resolution_clock::now();
+    Chess_0x88 state(tricky_position);
+    auto t_construct_end = std::chrono::high_resolution_clock::now();
 
-    EFFECTS::playBackground(-1); // loop forever
-    EFFECTS::setBackgroundVolumePercent(15);
+    // Time print_mini_board
+    auto t_print1_start = std::chrono::high_resolution_clock::now();
+    print_mini_board(state.board, state.turn, state.castle_right, state.en_passant);
+    auto t_print1_end = std::chrono::high_resolution_clock::now();
 
-    // Build raw move table once at startup
-    PIECE::buildRawMoveTable();
+    // Time print_attack_map
+    auto t_print2_start = std::chrono::high_resolution_clock::now();
+    print_attack_map(state.board, state.turn);
+    auto t_print2_end = std::chrono::high_resolution_clock::now();
 
-    GRAPHICS gfx;
-    CHESS chess;
-    InputHandler inputHandler;
+    // Capture overall end time
+    auto t_prog_end = std::chrono::high_resolution_clock::now();
 
-    if (!gfx.init("RedStone Chess", SCREEN_WIDTH, SCREEN_HEIGHT)) {
-        return 1;
-    }
+    // Helper to convert duration to double milliseconds
+    auto to_ms = [](auto dur) {
+        return std::chrono::duration<double, std::milli>(dur).count();
+    };
+    // or for microseconds:
+    auto to_us = [](auto dur) {
+        return std::chrono::duration<double, std::micro>(dur).count();
+    };
 
-    bool running = true;
-    int selectedSquare = -1;  // -1 means no piece selected
+    state.generate_moves();
 
-    while (running) {
-        // Poll input events once per frame
-        inputHandler.pollInputs(chess, running);
+    // Print timings
+    printf("\n=== Timing Report ===\n");
+    double dur_construct_ms = to_ms(t_construct_end - t_construct_start);
+    printf("Construct Chess_0x88 from FEN: %.3f ms\n", dur_construct_ms);
 
-        // Get one-time click index (or -1 if none this frame)
-        int clicked = inputHandler.getClickedSquareIndex();
-        if (clicked >= 0 && clicked < 64) {
-            //SDL_Log("Main: Mouse click on square %d", clicked);
+    double dur_print1_ms = to_ms(t_print1_end - t_print1_start);
+    printf("print_mini_board: %.3f ms\n", dur_print1_ms);
 
-            // CASE A: Click on a friendly piece -> select or deselect immediately
-            if (chess.board[clicked] && chess.board[clicked]->color == chess.currentPlayer) {
-                if (selectedSquare == clicked) {
-                    // Deselect if clicking same square again
-                    //SDL_Log("Main: Deselected square %d", clicked);
-                    selectedSquare = -1;
-                } else {
-                    // Select new piece immediately
-                    selectedSquare = clicked;
-                    //SDL_Log("Main: Selected square %d (piece=%s)",
-                    //        selectedSquare,
-                    //        chess.board[selectedSquare]->getTypeAsString().c_str());
-                    // Optionally: we could log its available moves now, or simply rely on drawMoveHint to show them.
-                }
-            }
-            // CASE B: Click on a different square while a piece is already selected -> attempt move
-            else if (selectedSquare >= 0) {
-                // Build MOVE from selectedSquare -> clicked
-                POSITION fromP(selectedSquare);
-                POSITION toP(clicked);
-                PIECE_TYPE pt = chess.board[selectedSquare]->type;
-                MOVE move(fromP, toP, pt);
+    double dur_print2_ms = to_ms(t_print2_end - t_print2_start);
+    printf("print_attack_map: %.3f ms\n", dur_print2_ms);
 
-                SDL_Log("Main: Attempting move %d -> %d for player %s",
-                        move.from.index, move.to.index,
-                        (chess.currentPlayer==COLOR::WHITE?"WHITE":"BLACK"));
+    double dur_total_ms = to_ms(t_prog_end - t_prog_start);
+    printf("Total run time: %.3f ms\n", dur_total_ms);
+    printf("=====================\n");
 
-                bool capture = (chess.board[toP.index] ? true : false);
-
-                gfx.animateMove(chess, fromP.index, toP.index, 200);
-                bool ok = chess.movePiece(move);
-                if (ok) {
-                    SDL_Log("Main: movePiece succeeded");
-
-                    //capture or move sound
-                    (capture ? EFFECTS::playCapture() : EFFECTS::playMove());
-
-                    // After movePiece, turn has been advanced and valid moves recomputed internally
-                    selectedSquare = -1; // clear selection
-                } else {
-                    SDL_Log("Main: movePiece rejected the move");
-                    EFFECTS::playInvalid();
-                    // Keep selection so user can try another destination if desired:
-                    selectedSquare = -1; //actually lets clear the selection (it feels better)
-                }
-            }
-            // CASE C: Click on empty square or opponent piece while no piece selected -> do nothing
-            else {
-                SDL_Log("Main: Click on square %d is not a selectable piece and no piece is selected",
-                        clicked);
-                selectedSquare = -1; // ensure no selection
-            }
-        }
-        // else: clicked < 0 -> no new click this frame; nothing to do for selection.
-
-        // Tell graphics which square to highlight (if any)
-        gfx.getHighlightIndex(selectedSquare);
-
-        // Draw the board & highlights
-        gfx.clear(chess);
-
-        // (Optional) cap framerate, e.g. SDL_Delay(16);
-    }
-
-    EFFECTS::cleanup();
     return 0;
 }
