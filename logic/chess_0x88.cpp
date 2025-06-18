@@ -21,10 +21,8 @@ Chess_0x88::Chess_0x88() : turn(0), castle_right(0), en_passant(Square::no_sqr)
 
 Chess_0x88::Chess_0x88(const char fen[]) : turn(0), castle_right(0), en_passant(Square::no_sqr)
 {
-    parse_fen_str(fen, board, turn, castle_right, en_passant);
+    parse_fen_str(fen, board, turn, castle_right, en_passant, king_pos);
     move_.reserve(256);
-    king_pos[0] = Square::e1;
-    king_pos[1] = Square::e8;
 }
 
 void Chess_0x88::pawn_generation(Piece type, int idx, int rank)

@@ -55,5 +55,7 @@ int main()
         print_move_info(m);
     printf("\nGenerated: %lu nodes\n", state.move_.size());
 
+    printf("white king: %s  ", square_to_coord[state.king_pos[Turn::white]]);
+    printf("black king: %s\n", square_to_coord[state.king_pos[Turn::black]]);
     return 0;
 }

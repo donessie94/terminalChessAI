@@ -34,7 +34,7 @@ void print_move_info(unsigned int mv)
     bool dbl       = get_double_pawn_flag(mv);
     bool ep        = get_en_passant_flag(mv);
     bool cast      = get_castle_flag(mv);
-    
+
     printf("  %s -> ", square_to_coord[src]);
     printf("%s", square_to_coord[dst]);
     printf(" %s", cap  ? "yes" : "no ");
@@ -230,7 +230,7 @@ void zero_board(int board[])
     }
 }
 
-void parse_fen_str(const char fen[], int board[], bool &turn, int &castle_right, int &en_passant)
+void parse_fen_str(const char fen[], int board[], bool &turn, int &castle_right, int &en_passant, int king_pos[])
 {
     zero_board(board);
     int letter = 0;
@@ -261,7 +261,14 @@ void parse_fen_str(const char fen[], int board[], bool &turn, int &castle_right,
                             spaces = fen[letter] - '0' - 1;
                             board[idx] = Piece::e;
                         }
-                        else { board[idx] = char_to_piece[fen[letter]]; }
+                        // if its a letter (piece represenation)
+                        else {
+                            if(fen[letter] == 'k' || fen[letter]  == 'K' )
+                            {
+                                king_pos[ (fen[letter] == 'K') ? Turn::white : Turn::black ] = idx;
+                            }
+                            board[idx] = char_to_piece[fen[letter]];
+                        }
                     }
                     // here know "spaces" is active so we position empty spaces in the board
                     else
