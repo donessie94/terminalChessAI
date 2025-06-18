@@ -2,10 +2,6 @@
 #include"logic/chess_0x88.h"
 #include <chrono>
 
-// Forward declaration of print functions, adjust signatures as needed:
-void print_mini_board(const int board[128], bool turn, int castle_right);
-void print_attack_map(const int board[128], bool turn);
-
 int main()
 {
     // Capture overall start time
@@ -54,6 +50,10 @@ int main()
     double dur_total_ms = to_ms(t_prog_end - t_prog_start);
     printf("Total run time: %.3f ms\n", dur_total_ms);
     printf("=====================\n");
+
+    for(auto &m : state.move_)
+        print_move_info(m);
+    printf("\nGenerated: %lu nodes\n", state.move_.size());
 
     return 0;
 }
