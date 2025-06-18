@@ -102,6 +102,7 @@ void print_mini_board(const int board[], bool turn, int castle_right, int en_pas
 }
 
 // note the moves must be "inverted" here since we checking from the attacked square to the piece (backwards)
+// this compute attacked squares for the player passed (turn boolean)
 bool is_square_attacked(const int *board, const bool turn, const int idx)
 {
     // we already know this square is on the board from the function call it (print_attack_map())
@@ -114,13 +115,15 @@ bool is_square_attacked(const int *board, const bool turn, const int idx)
 
         for(auto &step : pawn_capture_white)
         {
+            int search = idx + (-step);
             // if destination step is also on the board and there is a valid white piece attacking there (thus attacking the square) then yes
-            if( ( ( (idx + (-step)) & 0x88 ) == 0 ) && ( board[idx + (-step)] == Piece::P ) ) return true;
+            if( ( ( search & 0x88 ) == 0 ) && ( board[search] == Piece::P ) ) return true;
         }
         // for each attacking step of knight
         for(auto &step : knight_step)
         {
-            if( ( ( (idx + (-step)) & 0x88 ) == 0 ) && ( board[idx + (-step)] == Piece::N ) ) return true;
+            int search = idx + (-step);
+            if( ( ( search & 0x88 ) == 0 ) && ( board[search] == Piece::N ) ) return true;
         }
         for(auto &step : bishop_step)
         {
@@ -158,21 +161,23 @@ bool is_square_attacked(const int *board, const bool turn, const int idx)
         }
         for(auto &step : king_step)
         {
-            if( ( ( (idx + (-step)) & 0x88 ) == 0 ) && ( board[idx + (-step)] == Piece::K ) ) return true;
+            int search = idx + (-step);
+            if( ( ( search & 0x88 ) == 0 ) && ( board[search] == Piece::K ) ) return true;
         }
     }
     // black
     else
     {
         if(board[idx] > 6 && board[idx] != 13) return false;
-
         for(auto &step : pawn_capture_black)
         {
-            if( ( ( (idx + (-step)) & 0x88 ) == 0 ) && ( board[idx + (-step)] == Piece::p ) ) return true;
+            int search = idx + (-step);
+            if( ( ( search & 0x88 ) == 0 ) && ( board[search] == Piece::p ) ) return true;
         }
         for(auto &step : knight_step)
         {
-            if( ( ( (idx + (-step)) & 0x88 ) == 0 ) && ( board[idx + (-step)] == Piece::n ) ) return true;
+            int search = idx + (-step);
+            if( ( ( search & 0x88 ) == 0 ) && ( board[search] == Piece::n ) ) return true;
         }
         for(auto &step : bishop_step)
         {
@@ -206,7 +211,8 @@ bool is_square_attacked(const int *board, const bool turn, const int idx)
         }
         for(auto &step : king_step)
         {
-            if( ( ( (idx + (-step)) & 0x88 ) == 0 ) && ( board[idx + (-step)] == Piece::k ) ) return true;
+            int search = idx + (-step);
+            if( ( ( search & 0x88 ) == 0 ) && ( board[search] == Piece::k ) ) return true;
         }
     }
     return false;
