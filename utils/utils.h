@@ -2,6 +2,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <vector>
+#include <random>
+#include <algorithm> // for std::fill
+
+#include <iostream>
 
 using bitboard = uint64_t;
 
@@ -56,13 +60,18 @@ enum Color { white, black };
 extern bitboard pawn_attack_bb[2][64];
 extern bitboard knight_attack_bb[64];
 extern bitboard king_attack_bb[64];
-
 extern bitboard bishop_attack_bb[64];
-
+extern bitboard rook_attack_bb[64];
 
 extern bitboard bishop_relevant_sqrs_bb[64];
 extern bitboard rook_relevant_sqrs_bb[64];
-extern bitboard queen_relevant_sqrs_bb[64];
+
+extern int bishop_magic_shift[64];
+extern int rook_magic_shift[64];
+
+extern bitboard bishop_magic[64];
+extern bitboard rook_magic[64];
+
 
 void print_bb(bitboard bb);
 
@@ -71,10 +80,12 @@ void compute_leapers_attacks_bb();
 //
 void compute_bishop_relevant_occupancy_bb();
 void compute_rook_relevant_occupancy_bb();
-void compute_queen_relevant_occupancy_bb();
+
+//
+void compute_bishop_attack_table();
+void compute_rook_attack_table();
 
 // Returns a bitboard with bits set on all squares a rook on `sq` can attack/capture
 // given blockers in `relevant_occupancy_bb`.
 bitboard compute_bishop_attack_bb(bitboard relevant_occupancy_bb, int sq);
 bitboard compute_rook_attack_bb(bitboard relevant_occupancy_bb, int sq);
-bitboard compute_queen_attack_bb(bitboard relevant_occupancy_bb, int sq);

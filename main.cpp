@@ -2,10 +2,14 @@
 
 int main()
 {
+    //
     compute_leapers_attacks_bb();
     compute_bishop_relevant_occupancy_bb();
     compute_rook_relevant_occupancy_bb();
-    compute_queen_relevant_occupancy_bb();
+
+    //
+    compute_bishop_attack_table();
+    compute_rook_attack_table();
 
     // for(int i = 0; i<64; i++)
     // {
@@ -20,7 +24,9 @@ int main()
     set_bit(brd, Square::g7);
 
     print_bb(brd);
-    print_bb(compute_queen_attack_bb(brd, Square::d2));
+    print_bb(compute_bishop_attack_bb(brd, Square::d2));
+
+
 
     return 0;
 }
