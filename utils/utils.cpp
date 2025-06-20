@@ -1,37 +1,5 @@
 #include "utils.h"
 
-void print_bb(bitboard bb)
-{
-    printf("\nBoard State:\n\n");
-    for(int rank=0; rank<8; rank++)
-    {
-        printf("%d  ", 8-rank);
-        for(int file=0; file<8; file++)
-        {
-            // << 3 is * 2^3 = 8
-            int idx = (rank << 3) + file;
-            printf("%d ", get_bit(bb, idx) ? 1 : 0);
-        }
-        printf("\n");
-    }
-    printf("\n   ");
-    for(int file = 97; file < 105; file++)
-        printf("%c ", file);
-    printf("\n\n");
-
-    printf("Bitboard: %llud\n\n", bb);
-    // const char* toMove = (turn) ? "Black" : "White";
-    // printf("Moves: %s\n", toMove);
-
-    // // AND bitwise operator to ask is this flag up (recall > 0 is true)
-    // printf("Castle: %c%c%c%c\n",    (castle_right & Castle_Right::KC) ? 'K' : '-',
-    //                                 (castle_right & Castle_Right::QC) ? 'Q' : '-',
-    //                                 (castle_right & Castle_Right::kc) ? 'k' : '-',
-    //                                 (castle_right & Castle_Right::qc) ? 'q' : '-' );
-
-    // printf("En-Passant: %s\n", (en_passant==120) ? "-" : square_to_coord[en_passant]);
-}
-
 //
 bitboard pawn_attack_bb[2][64];  // e.g. side 0=white, 1=black
 bitboard knight_attack_bb[64];
@@ -46,6 +14,8 @@ Slider_Magic rook_magic[64];
 Slider_Magic bishop_magic[64];
 
 //
+bitboard piece_occ_bb[2][6];
+bitboard player_occ_bb[3];
 
 // ALL COMBINATIONS OF SIZE N ======================================================================================
 
@@ -107,7 +77,7 @@ void compute_leapers_attacks_bb()
             int idx = (rank << 3) + file;
 
             // set bit to current square on the board (idx)
-            set_bit(bb, idx);
+            GET_BIT(bb, idx);
 
             // ====================== PAWN GENERATION =========================================================================
             // only way to shift 7 bits to the right and end up in the 'a' file is to start at 'h' file
@@ -123,7 +93,8 @@ void compute_leapers_attacks_bb()
             if ((bb >> 9) & not_h_file)
                 attacks_w |= (bb >> 9);
 
-            pawn_attack_bb[Color::white][idx] = attacks_w;
+            // 0 is Color::white basically
+            pawn_attack_bb[0][idx] = attacks_w;
 
             // for black basically the same inverted
             if ((bb << 7) & not_h_file)
@@ -131,7 +102,8 @@ void compute_leapers_attacks_bb()
             if ((bb << 9) & not_a_file)
                 attacks_b |= (bb << 9);
 
-            pawn_attack_bb[Color::black][idx] = attacks_b;
+            // 1 is Color::black
+            pawn_attack_bb[1][idx] = attacks_b;
 
             // clear bit for next iteration
             bb = 0ULL;
@@ -159,7 +131,7 @@ void compute_leapers_attacks_bb()
             //    This corresponds to “north‐north‐east” or “south‐south‐west” depending on orientation,
             //    but as long as masking is correct it yields valid target bits.
 
-            set_bit(bb, idx);
+            SET_BIT(bb, idx);
 
             if ((bb >> 17) & not_h_file) attacks_w |= (bb >> 17);
 
@@ -197,7 +169,7 @@ void compute_leapers_attacks_bb()
             // This if statement are basically zeroing the bitboard in the exact position we want to avoid missbehavior (as the ones above)
 
             // set bit to current square on the board (idx)
-            set_bit(bb, idx);
+            SET_BIT(bb, idx);
 
             // no checks here no need it will zero out the attack bit (which means no valid destination from this position)
             // North: shift << 8 (up one rank). No file restriction needed for vertical shift.
@@ -279,7 +251,7 @@ void compute_bishop_relevant_occupancy_bb()
 
             // Now I set bits for the remaining squares in the mask
             for (int sq2 : ray_squares)
-                set_bit(mask, sq2);
+                SET_BIT(mask, sq2);
 
             // Done with this direction; move on to next diagonal
         }
@@ -365,13 +337,13 @@ bitboard compute_bishop_attack_bb(bitboard relevant_occupancy_bb, int sq)
             int sq2 = r * 8 + f;
 
             // if blocking piece found we check the next direction but first set the bit
-            if ( get_bit(relevant_occupancy_bb, sq2) != 0 )
+            if ( GET_BIT(relevant_occupancy_bb, sq2) != 0 )
             {
                 // calculate the idx of the bit and then set it on the mask
-                set_bit(mask, sq2);
+                SET_BIT(mask, sq2);
                 break;
             }
-            set_bit(mask, sq2);
+            SET_BIT(mask, sq2);
         }
         // Now ray_squares holds all attacked squares that relevant_occupancy_bb allows (including destination)
     }
@@ -413,10 +385,10 @@ bitboard compute_rook_attack_bb(bitboard relevant_occupancy_bb, int sq)
             int sq2 = r * 8 + f;
 
             // I include this square in mask (it is reachable or a capture)
-            set_bit(mask, sq2);
+            SET_BIT(mask, sq2);
 
             // If there's a blocker here (in relevant_occupancy_bb), I stop the ray
-            if (get_bit(relevant_occupancy_bb, sq2) != 0)
+            if (GET_BIT(relevant_occupancy_bb, sq2) != 0)
             {
                 // I found a blocker, so I break and move to next direction
                 break;
@@ -448,14 +420,14 @@ void compute_bishop_attack_table()
         // until we extract all the bits indeces in "bb"
         while (bb) {
             // count the trailing zeros to figure out index of the LS1B
-            int sq = ls1b_index(bb);    // index 0..63 of LSB
+            int sq = LS1B_IDX(bb);    // index 0..63 of LSB
             relevant_indices_set.push_back(sq);
             bb &= bb - 1;               // clear that bit (LS1B bit) so in next iteration we process the other bit after (wherever it is)
         }
 
         // same thing these 2
         // int N = relevant_indices_set.size() = count_bits(bishop_relevant_sqrs_bb[t_idx])
-        int twoToN = 1ULL << count_bits(bishop_magic[t_idx].relevant_sqrs_bb) ;
+        int twoToN = 1ULL << COUNT_BITS(bishop_magic[t_idx].relevant_sqrs_bb) ;
         //int N = count_bits(bishop_magic[t_idx].relevant_sqrs_bb);
         int N = relevant_indices_set.size();
 
@@ -666,12 +638,12 @@ void compute_rook_attack_table()
         std::vector<int> relevant_indices_set;
         bitboard bb = rook_magic[t_idx].relevant_sqrs_bb;
         while (bb) {
-            int sq = ls1b_index(bb);
+            int sq = LS1B_IDX(bb);
             relevant_indices_set.push_back(sq);
             bb &= bb - 1;
         }
-        int twoToN = 1ULL << count_bits(rook_magic[t_idx].relevant_sqrs_bb) ;
-        int N = count_bits(rook_magic[t_idx].relevant_sqrs_bb);
+        int twoToN = 1ULL << COUNT_BITS(rook_magic[t_idx].relevant_sqrs_bb) ;
+        int N = COUNT_BITS(rook_magic[t_idx].relevant_sqrs_bb);
         rook_magic[t_idx].shift = 64 - N;
         std::vector<bitboard> occ_subsets(twoToN);
         std::vector<bitboard> attack_masks(twoToN);

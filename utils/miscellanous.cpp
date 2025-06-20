@@ -214,22 +214,6 @@ void print_attack_map(const int board[], const bool turn)
     printf("\n\n");
 }
 
-void zero_board(int board[])
-{
-    for(int rank = 0; rank<8; rank++)
-    {
-        for(int file = 0; file<16; file++)
-        {
-            // take the 1D array to 2D formula
-            int idx = (rank << 4) + file;
-            if( (idx & 0x88) == 0 )
-                board[idx] = Piece::e;
-            else
-                board[idx] = Piece::o;
-        }
-    }
-}
-
 void parse_fen_str(const char fen[], int board[], bool &turn, int &castle_right, int &en_passant, int king_pos[])
 {
     zero_board(board);

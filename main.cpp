@@ -1,4 +1,4 @@
-#include"utils/utils.h"
+#include"utils/misc.h"
 
 int main()
 {
@@ -11,19 +11,13 @@ int main()
     compute_bishop_attack_table();
     compute_rook_attack_table();
 
-    // for(int i = 0; i<64; i++)
-    // {
-    //     //print_bb( pawn_attack_mask[Color::white][i] );
-    //     print_bb( bishop_magic[Square::d4].relevant_sqrs_bb );
-    // }
-
-    bitboard brd = 0ULL;
-    set_bit(brd, Square::f3);
-    set_bit(brd, Square::c2);
-
-    print_bb(brd);
-
-    print_bb(get_bishop_attack(brd, Square::e4));
+    // void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant, int king_pos[]);
+    bool turn = false;
+    int castle_right = 15; int en_passant = 0;
+    int king_pos[2];
+    parse_fen_str(tricky_position, player_occ_bb, piece_occ_bb, turn, castle_right, en_passant, king_pos);
+    // void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant)
+    print_mini_board(player_occ_bb, piece_occ_bb, turn, castle_right, en_passant);
 
     return 0;
 }

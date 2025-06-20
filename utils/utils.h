@@ -5,18 +5,20 @@
 #include <random>
 #include <algorithm> // for std::fill
 
-#include <iostream>
-
 using bitboard = uint64_t;
 
 // NOTE: a bitboard is a number (an 64-bits (ULL) number )
 // set, get or clear the specific bit (sqr) in a number
-#define set_bit(bb, sqr) ( bb |=  (1ULL << sqr) )
-#define get_bit(bb, sqr) ( bb &   (1ULL << sqr) )
-#define pop_bit(bb, sqr) ( bb &= ~(1ULL << sqr) )
+#define SET_BIT(bb, sqr) ( (bb) |=  (1ULL << (sqr)) )
+#define GET_BIT(bb, sqr) ( (bb) &   (1ULL << (sqr)) )
+#define POP_BIT(bb, sqr) ( (bb) &= ~(1ULL << (sqr)) )
 
 // gets the number of set bits (count) in an number
-#define count_bits(bb) ( __builtin_popcountll(bb) )
+#define COUNT_BITS(bb) ( __builtin_popcountll((bb)) )
+
+// gets the number of trailing zeros of the least significant bit in a number
+// in my representation this will give us exactly the idnex we need on the board
+#define LS1B_IDX(bb) ( __builtin_ctzll((bb)) )
 
 // GET POSSIBLE SLIDER ATTACK FROM ANY BOARD CONFIGURATION =================================================================================================
 
@@ -35,22 +37,39 @@ using bitboard = uint64_t;
 // and of course we need to make sure we dont leave our king in check
 
 // we use macros to avoid function call overheads to maximize speed (inline functions may work too (and safer))
-#define get_bishop_attack(occ, sq) \
+#define GET_BISHOP_ATTACK(occ, sq) \
     (bishop_attack_bb[(sq)][ (((occ) & bishop_magic[(sq)].relevant_sqrs_bb) \
                              * bishop_magic[(sq)].magic_bb) \
                              >> bishop_magic[(sq)].shift ])
 
 //
-#define get_rook_attack(occ, sq) \
+#define GET_ROCK_ATTACK(occ, sq) \
     (rook_attack_bb[(sq)][ ((((occ) & rook_magic[(sq)].relevant_sqrs_bb) \
                               * rook_magic[(sq)].magic_bb) \
                               >> rook_magic[(sq)].shift) ])
 
 // =========================================================================================================================================================
 
-// gets the number of trailing zeros of the least significant bit in a number
-// in my representation this will give us exactly the idnex we need on the board
-#define ls1b_index(bb) ( __builtin_ctzll(bb) )
+// macro to clear (pop, set to 0 same) all specific (given) bit from a given side
+// RECALL:
+//  extern bitboard piece_occ_bb[2][6];     // [side][piece_type]
+//  extern bitboard player_occ_bb[3];       // [WHITE=0], [BLACK=1], [ALL=2]
+//  enum Piece_Type { Pawn, Knight, Bishop, Rook, Queen, King, Empty };
+#define CLEAR_ALL_SQUARE(side, idx)                     \
+    {                                                   \
+        for (int _pt = 0; _pt < 6; ++_pt) {             \
+            POP_BIT(piece_occ_bb[(side)][_pt], (idx));  \
+        }                                               \
+        POP_BIT(player_occ_bb[(side)], (idx));          \
+        POP_BIT(player_occ_bb[2], (idx));               \
+    }
+
+#define SET_SQUARE_SIMPLE(side, ptype, idx)            \
+    {                                                  \
+        SET_BIT(piece_occ_bb[(side)][(ptype)], (idx)); \
+        SET_BIT(player_occ_bb[(side)], (idx));         \
+        SET_BIT(player_occ_bb[2], (idx));              \
+    }
 
 // “not A-file” = all bits except those on file A:
 constexpr bitboard not_a_file = 18374403900871474942ULL;
@@ -74,25 +93,18 @@ constexpr bitboard not_ab_file = 18229723555195321596ULL;
 //   hex:    0xFCFCFCFCFCFCFCFCULL
 //   decimal: 18229723555195321596ULL
 
-enum Square {
-    a8,  b8,  c8,  d8,  e8,  f8,  g8,  h8,
-    a7,  b7,  c7,  d7,  e7,  f7,  g7,  h7,
-    a6,  b6,  c6,  d6,  e6,  f6,  g6,  h6,
-    a5,  b5,  c5,  d5,  e5,  f5,  g5,  h5,
-    a4,  b4,  c4,  d4,  e4,  f4,  g4,  h4,
-    a3,  b3,  c3,  d3,  e3,  f3,  g3,  h3,
-    a2,  b2,  c2,  d2,  e2,  f2,  g2,  h2,
-    a1,  b1,  c1,  d1,  e1,  f1,  g1,  h1, no_sqr
-};
-
-enum Color { white, black };
-
 extern bitboard pawn_attack_bb[2][64];
 extern bitboard knight_attack_bb[64];
 extern bitboard king_attack_bb[64];
 //
 extern bitboard bishop_attack_bb[64][(1u<<9)];
 extern bitboard rook_attack_bb[64][(1u<<12)];
+
+// 0 -> White pieces bitboards   or   1 -> Black pieces bitboards
+// 0 trhough 6 the pieces in P, N, B, R, Q, K order
+// piece occupancy bitbord basically
+extern bitboard piece_occ_bb[2][6];     // [side][piece_type]
+extern bitboard player_occ_bb[3];       // [WHITE=0], [BLACK=1], [ALL=2]
 
 // I condensed All this into this struct for clarity
 // extern bitboard bishop_relevant_sqrs_bb[64];
@@ -110,9 +122,6 @@ struct Slider_Magic
 // Declare globals:
 extern Slider_Magic rook_magic[64];
 extern Slider_Magic bishop_magic[64];
-
-
-void print_bb(bitboard bb);
 
 void compute_leapers_attacks_bb();
 

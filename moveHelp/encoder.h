@@ -125,10 +125,10 @@ constexpr bool get_castle_flag(const unsigned int mv) { return ( ( mv & 0x200000
 enum Castle_Right { KC = 1, QC = 2, kc = 4, qc = 8 };
 
 //
-enum Turn { white, black };
+enum Color { white, black, all_color };
 
 // Piece enum
-enum Piece { e, P, N, B, R, Q, K, p, n, b, r, q, k, o };
+enum Piece { e, P, N, B, R, Q, K, p, n, b, r, q, k };
 
 // Move offsets
 extern const int pawn_step[2];
@@ -153,11 +153,4 @@ enum Square {
     a1, b1,  c1,  d1,  e1,  f1,  g1,  h1, no_sqr
 };
 
-// Declare externs for globals; definitions go in exactly one .cpp
-extern const char start_position[];         // FEN string
-extern const char tricky_position[];
-// extern int board[128];                   // 0x88 board
-extern const char *square_to_coord[128];    // coordinate strings
-extern const char ascii_pieces[];           // ASCII piece symbols
-extern const char *unicode_pieces[];        // Unicode piece symbols
-extern const int char_to_piece[];           // char→Piece mapping
+       // char→Piece mapping
