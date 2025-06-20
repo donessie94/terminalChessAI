@@ -558,7 +558,13 @@ void compute_bishop_attack_table()
             continue;
         }
 
-        //printf("N is: %d and .size(): %d \n", N, relevant_indices_set.size());
+        // if (t_idx % 8 == 7) {
+        //     // last file in this rank: print value then newline
+        //     printf("%d\n", N);
+        // } else {
+        //     // not last: print value and comma+space
+        //     printf("%d, ", N);
+        // }
 
         // 3. Search magic
         bitboard shift = 64 - N;
@@ -596,8 +602,7 @@ void compute_bishop_attack_table()
                 used[idx] = i;
             }
             if (!collision) {
-                printf("Found magic for square %d after %lld attempts: 0x%016llx\n",
-                    t_idx, (long long)attempts, (unsigned long long)M);
+                //printf("0x%016llxULL,\n", (unsigned long long)M);
                 magic = M;
                 break;
             }
@@ -610,6 +615,7 @@ void compute_bishop_attack_table()
         }
         bishop_magic[t_idx] = magic;
     }
+    //printf("\n");
 }
 
 void compute_rook_attack_table()
@@ -654,7 +660,14 @@ void compute_rook_attack_table()
         std::uniform_int_distribution<bitboard> dist;
         bitboard magic = 0ULL;
         int attempts =0;
-        //printf("N is: %d and .size(): %d \n", N, relevant_indices_set.size());
+
+        // if (t_idx % 8 == 7) {
+        //     // last file in this rank: print value then newline
+        //     printf("%d\n", N);
+        // } else {
+        //     // not last: print value and comma+space
+        //     printf("%d, ", N);
+        // }
         while (true) {
             attempts++;
             if ((attempts % 10000000) == 0) {
@@ -682,8 +695,7 @@ void compute_rook_attack_table()
                 used[idx] = i;
             }
             if (!collision) {
-                printf("Found magic for square %d after %lld attempts: 0x%016llx\n",
-                    t_idx, (long long)attempts, (unsigned long long)M);
+                //printf("0x%016llxULL,\n", (unsigned long long)M);
                 magic = M;
                 break;
             }
