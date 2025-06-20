@@ -36,19 +36,14 @@ void print_bb(bitboard bb)
 bitboard pawn_attack_bb[2][64];  // e.g. side 0=white, 1=black
 bitboard knight_attack_bb[64];
 bitboard king_attack_bb[64];
-bitboard bishop_attack_bb[64];
-bitboard rook_attack_bb[64];
+
+// max number of possible combination of relevant squares is 2^12 (rooks) and 2^9 (bishop)
+bitboard bishop_attack_bb[64][(1u<<9)];
+bitboard rook_attack_bb[64][(1u<<12)];
 
 //
-bitboard bishop_relevant_sqrs_bb[64];
-bitboard rook_relevant_sqrs_bb[64];
-
-//
-int bishop_magic_shift[64];
-int rook_magic_shift[64];
-//
-bitboard bishop_magic[64];
-bitboard rook_magic[64];
+Slider_Magic rook_magic[64];
+Slider_Magic bishop_magic[64];
 
 //
 
@@ -243,13 +238,11 @@ void compute_leapers_attacks_bb()
 
 void compute_bishop_relevant_occupancy_bb()
 {
-    // Directions for bishop rays: NE, NW, SE, SW
-    const int dirs[4][2] =
-    {
-        {+1, +1},  // NE
-        {-1, +1},  // NW
-        {+1, -1},  // SE
-        {-1, -1}   // SW
+    const int dirs[4][2] = {
+        {+1, -1},  // NE (file+1, rank-1)
+        {-1, -1},  // NW (file-1, rank-1)
+        {+1, +1},  // SE (file+1, rank+1)
+        {-1, +1},  // SW (file-1, rank+1)
     };
 
     // Loop over every square on the board
@@ -291,72 +284,61 @@ void compute_bishop_relevant_occupancy_bb()
             // Done with this direction; move on to next diagonal
         }
         // Store the computed relevant-occupancy mask
-        bishop_relevant_sqrs_bb[sq] = mask;
+        bishop_magic[sq].relevant_sqrs_bb = mask;
     }
 }
 
 void compute_rook_relevant_occupancy_bb()
 {
-    // Directions for rook rays: East, West, North, South
-    const int dirs[4][2] =
-    {
-        {+1,  0},  // East
-        {-1,  0},  // West
-        { 0, +1},  // North
-        { 0, -1}   // South
+    // Orthogonal directions under mapping: rank0=0 is rank8, rank0=7 is rank1.
+    const int dirs[4][2] = {
+        {+1,  0},  // East:  file+1, rank unchanged
+        {-1,  0},  // West:  file-1, rank unchanged
+        { 0, -1},  // North: rank-1, file unchanged
+        { 0, +1},  // South: rank+1, file unchanged
     };
 
-    // Loop over every square on the board
     for (int sq = 0; sq < 64; ++sq)
     {
-        // Compute file (0..7 for a..h) and rank (0..7 for 1..8)
-        int file0 = sq & 7;      // here I'm extracting the file via bitwise AND
-        int rank0 = sq >> 3;     // here I'm extracting the rank via shift (divide by 8)
-        bitboard mask = 0ULL;    // initializing the relevant mask for this rook square
+        int file0 = sq & 7;    // 0..7 for a..h
+        int rank0 = sq >> 3;   // 0..7 for ranks 8..1
+        bitboard mask = 0ULL;
 
-        // For each orthogonal direction, collect ray squares then exclude the terminal edge
         for (auto &d : dirs)
         {
             int df = d[0], dr = d[1];
             int f = file0, r = rank0;
-            // I’ll collect all squares along this ray in a temporary vector
             std::vector<int> ray_squares;
             while (true)
             {
                 f += df;
                 r += dr;
-                // If I step off-board, I stop collecting for this direction
+                // stop if off-board
                 if (f < 0 || f > 7 || r < 0 || r > 7)
                     break;
-
                 int sq2 = r * 8 + f;
                 ray_squares.push_back(sq2);
             }
-            // Now ray_squares holds all squares from one step out to the edge.
-            // To exclude the terminal edge square, I remove the last element if non-empty.
+            // exclude the terminal edge square:
             if (!ray_squares.empty())
                 ray_squares.pop_back();
-
-            // Now I OR each remaining square’s bit into the mask
+            // OR the remaining squares into mask
             for (int sq2 : ray_squares)
-                set_bit(mask, sq2);
-
-            // Done processing this direction; move to the next orthogonal ray
+                mask |= (1ULL << sq2);
         }
-        // Store the computed relevant-occupancy mask for the rook on square sq
-        rook_relevant_sqrs_bb[sq] = mask;
+
+        rook_magic[sq].relevant_sqrs_bb = mask;
     }
 }
 
 bitboard compute_bishop_attack_bb(bitboard relevant_occupancy_bb, int sq)
 {
     // Directions for bishop rays: NE, NW, SE, SW
-    const int dirs[4][2] =
-    {
-        {+1, +1},  // NE
-        {-1, +1},  // NW
-        {+1, -1},  // SE
-        {-1, -1}   // SW
+    const int dirs[4][2] = {
+        {+1, -1},  // NE (file+1, rank-1)
+        {-1, -1},  // NW (file-1, rank-1)
+        {+1, +1},  // SE (file+1, rank+1)
+        {-1, +1},  // SW (file-1, rank+1)
     };
 
     // Compute file (0..7 for a..h) and rank (0..7 for 1..8)
@@ -400,12 +382,11 @@ bitboard compute_bishop_attack_bb(bitboard relevant_occupancy_bb, int sq)
 bitboard compute_rook_attack_bb(bitboard relevant_occupancy_bb, int sq)
 {
     // Directions for rook rays: East, West, North, South
-    const int dirs[4][2] =
-    {
-        {+1,  0},  // East
-        {-1,  0},  // West
-        { 0, +1},  // North
-        { 0, -1}   // South
+    const int dirs[4][2] = {
+        {+1,  0},  // East:  file+1, rank unchanged
+        {-1,  0},  // West:  file-1, rank unchanged
+        { 0, -1},  // North: rank-1, file unchanged
+        { 0, +1},  // South: rank+1, file unchanged
     };
 
     // Compute file (0..7 for a..h) and rank (0..7 for 1..8)
@@ -461,7 +442,7 @@ void compute_bishop_attack_table()
         std::vector<int> relevant_indices_set;
 
         // our relevant_occupancy bitboard being processed in this iteration
-        bitboard bb = bishop_relevant_sqrs_bb[t_idx];
+        bitboard bb = bishop_magic[t_idx].relevant_sqrs_bb;
 
         // while "bb" still has a bit set we keep going
         // until we extract all the bits indeces in "bb"
@@ -474,8 +455,9 @@ void compute_bishop_attack_table()
 
         // same thing these 2
         // int N = relevant_indices_set.size() = count_bits(bishop_relevant_sqrs_bb[t_idx])
-        int twoToN = 1ULL << count_bits(bishop_relevant_sqrs_bb[t_idx]) ;
-        int N = count_bits(bishop_relevant_sqrs_bb[t_idx]);
+        int twoToN = 1ULL << count_bits(bishop_magic[t_idx].relevant_sqrs_bb) ;
+        //int N = count_bits(bishop_magic[t_idx].relevant_sqrs_bb);
+        int N = relevant_indices_set.size();
 
         // MAGIC NUMBER (BITBOARD) ====================================================================================================================
         // here we save the "magic_shift" needed after the magic bitboard multiplication by this combination,
@@ -493,12 +475,23 @@ void compute_bishop_attack_table()
         //
         // quick note, top N bits cuz when sfhiting right will zero out all the garbage, at the start bit for example you will have to zero
         // out yourself the garbage and is not as fast as a simple shift operation
-        bishop_magic_shift[t_idx] = 64 - N; // CAREFULL the shift is 64-N not N itself
+        bishop_magic[t_idx].shift = 64 - N; // CAREFULL the shift is 64-N not N itself
 
         // temporary dta that we need to fill the final slider_attack_table and its magics bitboards
         // basically saving here all occupancy subsets and all attack masks for each one of them
         std::vector<bitboard> occ_subsets(twoToN);
         std::vector<bitboard> attack_masks(twoToN);
+
+        // since shifting by 64 in a 64 bits is undefined behavior we have to make sure we handle this special case when N = 0
+        // even tho (1<<0) = 2^0 = 1 (thus 1 subset, the empty subset is correct) the problem is when generating the magic bitboard
+        // we will try to shift by 64 - N ( which is 0) so 64 - 0 = 64 PUM undefined
+        if (N == 0) {
+            bishop_magic[t_idx].magic_bb = 0ULL;
+            bishop_magic[t_idx].shift = 0; // so (0 * magic) >> 0 == 0
+            bishop_attack_bb[t_idx][0] = 0ULL;
+            printf("ERROR: N is equal zero: %d\n", N);
+            continue;
+        }
 
         // shift N (x << N) basically multiply x by 2^N
         // for each different binary representation of the number 2^N where N=number of bits in the relevant_sqr bitboard
@@ -532,7 +525,7 @@ void compute_bishop_attack_table()
             bitboard attack_bb = compute_bishop_attack_bb(subset_bb, t_idx);
             attack_masks[br_idx] = attack_bb;
         }
-        //
+
         // MAGIC NUMBER GENERATION ====================================================================================================================
         //
         //     	Initialize a random-number generator (e.g., std::mt19937_64 rng(seed)), where seed can be deterministic per square or from random device.
@@ -546,18 +539,6 @@ void compute_bishop_attack_table()
         // 4.	If the loop finishes without collision, M is valid. Record magic[sq] = M and magic_shift[sq] = shift, then break out of the search.
         // •	Empirically, because the space of 64-bit constants is huge relative to the small number of subsets (e.g., 2^12 = 4096), valid magic constants are plentiful and typically found after a modest number of tries.
 
-        // since shifting by 64 in a 64 bits is undefined behavior we have to make sure we handle this special case when N = 0
-        // even tho (1<<0) = 2^0 = 1 (thus 1 subset, the empty subset is correct) the problem is when generating the magic bitboard
-        // we will try to shift by 64 - N ( which is 0) so 64 - 0 = 64 PUM undefined
-        //
-        if (N == 0) {
-            bishop_magic[t_idx] = 0ULL;
-            bishop_magic_shift[t_idx] = 64; // or any value ≥64; but we won’t actually shift
-            // Build the attack table of size 1 with the only entry 0:
-            //bishop_attack_bb[t_idx].assign(1, 0ULL);
-            continue;
-        }
-
         // if (t_idx % 8 == 7) {
         //     // last file in this rank: print value then newline
         //     printf("%d\n", N);
@@ -567,7 +548,7 @@ void compute_bishop_attack_table()
         // }
 
         // 3. Search magic
-        bitboard shift = 64 - N;
+        int shift = 64 - N;
         std::vector<int> used(twoToN, -1);
         // we provide a seed for reproducibility  0x924345B97F12fBBCULL
         std::mt19937_64 rng(t_idx ^ 0x022511947F12fBBCULL);
@@ -577,9 +558,9 @@ void compute_bishop_attack_table()
         int attempts = 0;
         while (true) {
             attempts++;
-            if ((attempts % 1000000) == 0) {
-                //printf("Searching magic for square %d: attempt %lld\n", t_idx, (long long)attempts);
-            }
+            // if ((attempts % 1000000) == 0) {
+            //     //printf("Searching magic for square %d: attempt %lld\n", t_idx, (long long)attempts);
+            // }
             uint64_t M = (dist(rng) & dist(rng) & dist(rng)) | 1ULL; // sparser
             bool collision = false;
             std::fill(used.begin(), used.end(), -1);
@@ -613,7 +594,67 @@ void compute_bishop_attack_table()
                 //printf("  Reseeded RNG for square %d at attempt %lld\n", t_idx, (long long)attempts);
             }
         }
-        bishop_magic[t_idx] = magic;
+        //
+        bishop_magic[t_idx].magic_bb = magic;
+
+        // now we good so we store everything on our array for use
+        // BE CAREFUL, OUR HASH IS PERFECT BUT THE ORDER IS "RANDOM" we only ensure one too one not that 0 is the first 1 is second and so on..
+        // so wherever that order is we must keep here (this may give you the worst heache ever)
+        for (int i = 0; i < twoToN; i++)
+        {
+            uint64_t idx = (occ_subsets[i] * magic) >> shift;
+            bishop_attack_bb[t_idx][idx] = attack_masks[i];
+        }
+
+        // DEBUGING PURPOSES =================================================================================================================
+        //
+        // {
+        //     int sq = t_idx;
+        //     // Sanity: ensure stored shift matches
+        //     if (bishop_magic[sq].shift != shift) {
+        //         printf("Error: stored shift (%d) != localShift (%d) at sq %d\n",
+        //             bishop_magic[sq].shift, shift, sq);
+        //         exit(1);
+        //     }
+        //     // Loop all subsets
+        //     for (int i = 0; i < twoToN; i++) {
+        //         bitboard subset = occ_subsets[i];
+        //         // 1) naive attack
+        //         bitboard naive = compute_bishop_attack_bb(subset, sq);
+        //         // 2) compare to the precomputed attack_masks[i]
+        //         bitboard stored = attack_masks[i];
+        //         if (naive != stored) {
+        //             printf("Validation ERROR: precomputed attack mismatch at sq %d subset %d\n", sq, i);
+        //             printf("Subset bitboard:\n"); print_bb(subset);
+        //             printf("Naive attack:\n");    print_bb(naive);
+        //             printf("attack_masks[%d]:\n", i); print_bb(stored);
+        //             exit(1);
+        //         }
+        //         // 3) compute magic index
+        //         uint64_t idx = (subset * magic) >> shift;
+        //         if (idx >= (uint64_t)twoToN) {
+        //             printf("Validation ERROR: magic idx out of range at sq %d subset %d idx=%llu (twoToN=%d)\n",
+        //                 sq, i, (unsigned long long)idx, twoToN);
+        //             printf("Subset bitboard:\n"); print_bb(subset);
+        //             exit(1);
+        //         }
+        //         // 4) lookup via the TABLE
+        //         bitboard lookup = bishop_attack_bb[sq][idx];
+        //         if (lookup != naive) {
+        //             printf("Validation ERROR: lookup via magic mismatch at sq %d subset %d idx=%llu\n",
+        //                 sq, i, (unsigned long long)idx);
+        //             printf("Subset bitboard:\n"); print_bb(subset);
+        //             printf("Naive attack:\n");    print_bb(naive);
+        //             printf("Table entry [idx=%llu]:\n", (unsigned long long)idx); print_bb(lookup);
+        //             exit(1);
+        //         }
+        //     }
+        //     // If we reach here, all subsets for this square passed validation
+        //     // printf("Square %d: all %d subsets validated OK\n", sq, twoToN);
+        // }
+        //
+        // ================================================================================================================================
+
     }
     //printf("\n");
 }
@@ -623,17 +664,23 @@ void compute_rook_attack_table()
     for(int t_idx=0; t_idx<64; t_idx++)
     {
         std::vector<int> relevant_indices_set;
-        bitboard bb = rook_relevant_sqrs_bb[t_idx];
+        bitboard bb = rook_magic[t_idx].relevant_sqrs_bb;
         while (bb) {
             int sq = ls1b_index(bb);
             relevant_indices_set.push_back(sq);
             bb &= bb - 1;
         }
-        int twoToN = 1ULL << count_bits(rook_relevant_sqrs_bb[t_idx]) ;
-        int N = count_bits(rook_relevant_sqrs_bb[t_idx]);
-        rook_magic_shift[t_idx] = 64 - N;
+        int twoToN = 1ULL << count_bits(rook_magic[t_idx].relevant_sqrs_bb) ;
+        int N = count_bits(rook_magic[t_idx].relevant_sqrs_bb);
+        rook_magic[t_idx].shift = 64 - N;
         std::vector<bitboard> occ_subsets(twoToN);
         std::vector<bitboard> attack_masks(twoToN);
+        if (N == 0) {
+            rook_magic[t_idx].magic_bb = 0ULL;
+            rook_magic[t_idx].shift = 0; // so (0 * magic) >> 0 == 0
+            rook_attack_bb[t_idx][0] = 0ULL;
+            continue;
+        }
         for(int br_idx=0; br_idx < twoToN; br_idx++)
         {
             bitboard subset_bb = 0ULL;
@@ -646,14 +693,7 @@ void compute_rook_attack_table()
             bitboard attack_bb = compute_rook_attack_bb(subset_bb, t_idx);
             attack_masks[br_idx] = attack_bb;
         }
-        if (N == 0) {
-            rook_magic[t_idx] = 0ULL;
-            rook_magic_shift[t_idx] = 64; // or any value ≥64; but we won’t actually shift
-            // Build the attack table of size 1 with the only entry 0:
-            //bishop_attack_bb[t_idx].assign(1, 0ULL);
-            continue;
-        }
-        bitboard shift = 64 - N;
+        int shift = 64 - N;
         std::vector<int> used(twoToN, -1);
         //std::mt19937_64 rng(t_idx ^ 0x924345B97FAF7C15ULL);
         std::mt19937_64 rng(t_idx ^ 0x4DC7B62FCA65190ULL);
@@ -706,6 +746,11 @@ void compute_rook_attack_table()
                 //printf("  Reseeded RNG for square %d at attempt %lld\n", t_idx, (long long)attempts);
             }
         }
-        rook_magic[t_idx] = magic;
+        rook_magic[t_idx].magic_bb = magic;
+        for (int i = 0; i < twoToN; i++)
+        {
+            uint64_t idx = (occ_subsets[i] * magic) >> shift;
+            rook_attack_bb[t_idx][idx] = attack_masks[i];
+        }
     }
 }

@@ -14,19 +14,16 @@ int main()
     // for(int i = 0; i<64; i++)
     // {
     //     //print_bb( pawn_attack_mask[Color::white][i] );
-    //     print_bb( queen_relevant_sqrs_bb[i] );
+    //     print_bb( bishop_magic[Square::d4].relevant_sqrs_bb );
     // }
 
     bitboard brd = 0ULL;
-    set_bit(brd, Square::e4);
-    set_bit(brd, Square::c3);
-    set_bit(brd, Square::f4);
-    set_bit(brd, Square::g7);
+    set_bit(brd, Square::f3);
+    set_bit(brd, Square::c2);
 
     print_bb(brd);
-    print_bb(compute_bishop_attack_bb(brd, Square::d2));
 
-
+    print_bb(get_bishop_attack(brd, Square::e4));
 
     return 0;
 }
