@@ -39,4 +39,5 @@ extern const int char_to_piece[];
 void print_bb(bitboard bb);
 
 void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant);
+void print_attack_map(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], const bool turn);
 void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool &turn, int &castle_right, int &en_passant, int king_pos[]);

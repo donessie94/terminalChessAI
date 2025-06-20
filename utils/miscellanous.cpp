@@ -299,7 +299,7 @@ void parse_fen_str(const char fen[], int board[], bool &turn, int &castle_right,
     int fileIndex = fileChar - 'a';        // 0..7
     int rankDigit = rankChar - '0';        // 1..8
     int rankRow = 8 - rankDigit;           // 0..7 for 0x88
-    int idx = (rankRow << 4) + fileIndex;    // 0x88 index
+    int idx = (rankRow << 3) + fileIndex;    // index
 
     //printf("En-Passant: %s\n", square_to_coord[idx]);
     en_passant = idx;

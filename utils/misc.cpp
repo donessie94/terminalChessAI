@@ -2,7 +2,8 @@
 
 // Define the FEN start string:
 const char start_position[] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-const char tricky_position[] = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+//const char tricky_position[] = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+const char tricky_position[] = "8/8/8/8/8/8/PPPPPPPP/8 w Kq e4 0 1";
 
 // Define ASCII/Unicode:
 const char ascii_pieces[] = {
@@ -83,7 +84,25 @@ void print_bb(bitboard bb)
 
 void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool &turn, int &castle_right, int &en_passant, int king_pos[])
 {
-    //zero_board(board);
+    // 1) Zero out all occupancy bitboards:
+    // Zero all bitboards in one shot:
+    memset(player_occ_bb, 0, 3 * sizeof(bitboard));
+    memset(piece_occ_bb, 0, 2 * 6 * sizeof(bitboard));
+
+    // 3) Initialize side to move to a default
+    turn = 0;
+
+    // 4) Clear castling rights:
+    castle_right = 0;
+
+    // 5) Clear en-passant square:
+    en_passant = Square::no_sqr;
+
+    // 6) Clear king positions:
+    king_pos[Color::white] = Square::no_sqr;
+    king_pos[Color::black] = Square::no_sqr;
+
+    // Now we parse the string and fill up the values
     int letter = 0;
     int spaces = 0;
     bool spaceFound = false;
@@ -148,6 +167,43 @@ void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_o
             letter++;
         }
     }
+
+    // parsing turn
+    turn = (fen[++letter] == 'w') ? 0 : 1;
+    letter+=2; //ignoring white space
+
+    // parsing castle rights
+    while (fen[letter] != ' ')
+    {
+        switch (fen[letter])
+        {
+            // OR bitwise operator, OR with 1, 2, 4, 8 basically putting the bits there (since we start at 'castle_right' = 0)
+            case 'K':   castle_right = castle_right | Castle_Right::KC; break;
+            case 'k':   castle_right |= Castle_Right::kc;               break;
+            case 'Q':   castle_right |= Castle_Right::QC;               break;
+            case 'q':   castle_right |= Castle_Right::qc;               break;
+            case '-':                                                   break;
+        }
+        letter++;
+    }
+
+    // skip white space
+    letter++;
+
+    // if letter is '-' it means no enpassant possible
+    if(fen[letter]=='-') { en_passant = Square::no_sqr; return; }
+
+    char fileChar = fen[letter];
+    char rankChar = fen[letter + 1];
+    //printf("En-Passant: %c%c\n", fileChar, rankChar);
+
+    int fileIndex = fileChar - 'a';        // 0..7
+    int rankDigit = rankChar - '0';        // 1..8
+    int rankRow = 8 - rankDigit;           // 0..7 for 0x88
+    int idx = (rankRow << 3) + fileIndex;    // index
+
+    //printf("En-Passant: %s\n", square_to_coord[idx]);
+    en_passant = idx;
 }
 
 void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant)
@@ -222,4 +278,28 @@ void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bo
                                     (castle_right & Castle_Right::qc) ? 'q' : '-' );
 
     printf("En-Passant: %s\n", (en_passant==64) ? "-" : square_to_coord[en_passant]);
+}
+
+void print_attack_map(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], const bool turn)
+{
+    printf("\nAttack Map:\n\n");
+    for(int rank = 0; rank<8; rank++)
+    {
+        printf(" %d  ", 8-rank);
+        for(int file = 0; file<8; file++)
+        {
+            // take the 1D array to 2D formula
+            int idx = (rank << 3) + file;
+            printf( "%s", ( IS_SQUARE_ATTACKED(turn, player_occ_bb[Color::all_color], idx) ) ? "x ": ". " );
+        }
+        printf("\n");
+    }
+    printf("\n    ");
+    for(int file = 97; file < 105; file++)
+        printf("%c ", file);
+    printf("\n\n");
+
+    const char* toMove = (turn) ? "Black" : "White";
+    printf("Moves: %s\n", toMove);
+
 }

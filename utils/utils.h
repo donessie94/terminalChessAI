@@ -7,6 +7,9 @@
 
 using bitboard = uint64_t;
 
+// FOR SAFETY USE ALL MACROS WITH SINGLE VARIABLES AND NOT COMPLEX EXPRESSIONS
+// i do macros to minimize overhead from function calls and prioritize speed
+
 // NOTE: a bitboard is a number (an 64-bits (ULL) number )
 // set, get or clear the specific bit (sqr) in a number
 #define SET_BIT(bb, sqr) ( (bb) |=  (1ULL << (sqr)) )
@@ -43,10 +46,14 @@ using bitboard = uint64_t;
                              >> bishop_magic[(sq)].shift ])
 
 //
-#define GET_ROCK_ATTACK(occ, sq) \
+#define GET_ROOK_ATTACK(occ, sq) \
     (rook_attack_bb[(sq)][ ((((occ) & rook_magic[(sq)].relevant_sqrs_bb) \
                               * rook_magic[(sq)].magic_bb) \
                               >> rook_magic[(sq)].shift) ])
+
+// NOTE queen is just attack or rook attacks
+#define GET_QUEEN_ATTACK(occ, sq) \
+    ( GET_BISHOP_ATTACK((occ),(sq)) | GET_ROOK_ATTACK((occ),(sq)) )
 
 // =========================================================================================================================================================
 
@@ -70,6 +77,45 @@ using bitboard = uint64_t;
         SET_BIT(player_occ_bb[(side)], (idx));         \
         SET_BIT(player_occ_bb[2], (idx));              \
     }
+
+// IS A SQUARE ATTACKED? ===========================================================================================================================================
+
+// Single macro: returns non-zero (true) if attacked, zero (false) otherwise.
+// Note: in C/C++, a non-zero bitboard in boolean context is true. We compare to 0ULL explicitly for clarity.
+//
+// white point of view (pawn) (ill explain the logic trick here):
+// the cleaver observation here is: if a black pawn was placed on this square we are currently checking, and this black pawn
+// attacks ANY white pawn on the board then this square is attacked by a white pawn tudum
+//
+// so we get the attack mask from a black (opossite) color pawn placed on this square
+// and AND it with the position of all white pawns on the board
+// if this return true then the square is attacked by a white pawn
+// Bishops & Queens (diagonals): (same but we of course need the board state to find the correct attack mask of the "placed on this square enemy bishop/queen")
+// then we OR the queen and bishops of the player at turn to get the bitboard with all bishop and queen of this player
+// and finally we AND the above bitboard with the attacks mask of the "enemy bishop/queen placed on the square we checkign"
+
+#define IS_SQUARE_ATTACKED(turn, occ, idx)                                                                      \
+    (                                                                                                           \
+      /* Pawn attacks: if any pawn of 'turn' attacks idx */                                                     \
+      ((pawn_attack_bb[!(turn)][(idx)] & piece_occ_bb[(turn)][Piece_Type::Pawn]) != 0ULL)                       \
+      ||                                                                                                        \
+      /* Knight attacks */                                                                                      \
+      ((knight_attack_bb[(idx)] & piece_occ_bb[(turn)][Piece_Type::Knight]) != 0ULL)                            \
+      ||                                                                                                        \
+      /* King attacks (adjacency) */                                                                            \
+      ((king_attack_bb[(idx)] & piece_occ_bb[(turn)][Piece_Type::King]) != 0ULL)                                \
+      ||                                                                                                        \
+      /* Bishop/Queen diagonal attacks */                                                                       \
+      ((GET_BISHOP_ATTACK((occ),(idx)) &                                                                        \
+         (piece_occ_bb[(turn)][Piece_Type::Bishop] | piece_occ_bb[(turn)][Piece_Type::Queen])) != 0ULL)         \
+      ||                                                                                                        \
+      /* Rook/Queen orthogonal attacks */                                                                       \
+      ((GET_ROOK_ATTACK((occ),(idx)) &                                                                          \
+         (piece_occ_bb[(turn)][Piece_Type::Rook]   | piece_occ_bb[(turn)][Piece_Type::Queen])) != 0ULL)         \
+    )
+
+// =========================================================================================================================================================
+
 
 // “not A-file” = all bits except those on file A:
 constexpr bitboard not_a_file = 18374403900871474942ULL;

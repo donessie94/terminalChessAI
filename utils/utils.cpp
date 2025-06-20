@@ -69,15 +69,16 @@ void compute_leapers_attacks_bb()
     bitboard bb = 0ULL;
     bitboard attacks_w = 0ULL;
     bitboard attacks_b = 0ULL;
-    for(int rank=0; rank<8; rank++)
+
+    for (int rank = 0; rank < 8; rank++)
     {
-        for(int file=0; file<8; file++)
+        for (int file = 0; file < 8; file++)
         {
             // << 3 is * 2^3 = 8
             int idx = (rank << 3) + file;
 
             // set bit to current square on the board (idx)
-            GET_BIT(bb, idx);
+            SET_BIT(bb, idx);
 
             // ====================== PAWN GENERATION =========================================================================
             // only way to shift 7 bits to the right and end up in the 'a' file is to start at 'h' file
@@ -133,28 +134,36 @@ void compute_leapers_attacks_bb()
 
             SET_BIT(bb, idx);
 
-            if ((bb >> 17) & not_h_file) attacks_w |= (bb >> 17);
+            if ((bb >> 17) & not_h_file)
+                attacks_w |= (bb >> 17);
 
             // 2) Shift right 15 (bb >> 15)
-            if ((bb >> 15) & not_a_file) attacks_w |= (bb >> 15);
+            if ((bb >> 15) & not_a_file)
+                attacks_w |= (bb >> 15);
 
             // 3) Shift right 10 (bb >> 10)
-            if ((bb >> 10) & not_hg_file) attacks_w |= (bb >> 10);
+            if ((bb >> 10) & not_hg_file)
+                attacks_w |= (bb >> 10);
 
             // 4) Shift right 6 (bb >> 6)
-            if ((bb >> 6) & not_ab_file) attacks_w |= (bb >> 6);
+            if ((bb >> 6) & not_ab_file)
+                attacks_w |= (bb >> 6);
 
             // 5) Shift left 17 (bb << 17)
-            if ((bb << 17) & not_a_file) attacks_w |= (bb << 17);
+            if ((bb << 17) & not_a_file)
+                attacks_w |= (bb << 17);
 
             // 6) Shift left 15 (bb << 15)
-            if ((bb << 15) & not_h_file) attacks_w |= (bb << 15);
+            if ((bb << 15) & not_h_file)
+                attacks_w |= (bb << 15);
 
             // 7) Shift left 10 (bb << 10)
-            if ((bb << 10) & not_ab_file) attacks_w |= (bb << 10);
+            if ((bb << 10) & not_ab_file)
+                attacks_w |= (bb << 10);
 
             // 8) Shift left 6 (bb << 6)
-            if ((bb << 6) & not_hg_file) attacks_w |= (bb << 6);
+            if ((bb << 6) & not_hg_file)
+                attacks_w |= (bb << 6);
 
             knight_attack_bb[idx] = attacks_w;
 
@@ -165,7 +174,7 @@ void compute_leapers_attacks_bb()
 
             // =================================================================================================================
 
-            // ====================== KNIGHT GENERATION ========================================================================
+            // ====================== KING GENERATION =========================================================================
             // This if statement are basically zeroing the bitboard in the exact position we want to avoid missbehavior (as the ones above)
 
             // set bit to current square on the board (idx)
@@ -179,22 +188,22 @@ void compute_leapers_attacks_bb()
             attacks_b |= (bb >> 8);
 
             // East: shift << 1, but mask out those originally on file H (to avoid wraparound).
-            attacks_b |= ( (bb & not_h_file) << 1 );
+            attacks_b |= ((bb & not_h_file) << 1);
 
             // West: shift >> 1, but mask out those originally on file A.
-            attacks_b |= ( (bb & not_a_file) >> 1 );
+            attacks_b |= ((bb & not_a_file) >> 1);
 
             // NE: shift << 9 = north + east; mask original on file H first.
-            attacks_b |= ( (bb & not_h_file) << 9 );
+            attacks_b |= ((bb & not_h_file) << 9);
 
             // NW: shift << 7 = north + west; mask original on file A first.
-            attacks_b |= ( (bb & not_a_file) << 7 );
+            attacks_b |= ((bb & not_a_file) << 7);
 
             // SE: shift >> 7 = south + east; mask original on file H first.
-            attacks_b |= ( (bb & not_h_file) >> 7 );
+            attacks_b |= ((bb & not_h_file) >> 7);
 
             // SW: shift >> 9 = south + west; mask original on file A first.
-            attacks_b |= ( (bb & not_a_file) >> 9 );
+            attacks_b |= ((bb & not_a_file) >> 9);
 
             king_attack_bb[idx] = attacks_b;
 
