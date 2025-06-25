@@ -1,56 +1,10 @@
 #include"misc.h"
 
-// Define the FEN start string:
-const char start_position[] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-//const char tricky_position[] = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
-const char tricky_position[] = "8/8/8/8/8/8/PPPPPPPP/8 w Kq e4 0 1";
+namespace RedStone{
 
-// Define ASCII/Unicode:
-const char ascii_pieces[] = {
-    'P', 'N', 'B', 'R', 'Q', 'K',
-    'p', 'n', 'b', 'r', 'q', 'k', '.'
-};
-const char *unicode_pieces[] = {
-    "♟", "♞", "♝", "♜", "♛", "♚",
-    "♙", "♘", "♗", "♖", "♕", "♔", ".",
-};
+namespace Utils{
 
-// Define coordinate lookup:
-const char *square_to_coord[128] = {
-    "a8","b8","c8","d8","e8","f8","g8","h8",
-    "a7","b7","c7","d7","e7","f7","g7","h7",
-    "a6","b6","c6","d6","e6","f6","g6","h6",
-    "a5","b5","c5","d5","e5","f5","g5","h5",
-    "a4","b4","c4","d4","e4","f4","g4","h4",
-    "a3","b3","c3","d3","e3","f3","g3","h3",
-    "a2","b2","c2","d2","e2","f2","g2","h2",
-    "a1","b1","c1","d1","e1","f1","g1","h1","no_sqr"
-};
-
-
-// Define char_to_piece:
-const int char_to_piece[] = {
-    ['P'] = Piece::P, ['p'] = Piece::p,
-    ['N'] = Piece::N, ['n'] = Piece::n,
-    ['B'] = Piece::B, ['b'] = Piece::b,
-    ['R'] = Piece::R, ['r'] = Piece::r,
-    ['Q'] = Piece::Q, ['q'] = Piece::q,
-    ['K'] = Piece::K, ['k'] = Piece::k,
-    ['e'] = Piece::e
-};
-
-// Define char_to_type:
-const int char_to_piece_type[] = {
-    ['P'] = Piece_Type::Pawn,   ['p'] = Piece_Type::Pawn,
-    ['N'] = Piece_Type::Knight, ['n'] = Piece_Type::Knight,
-    ['B'] = Piece_Type::Bishop, ['b'] = Piece_Type::Bishop,
-    ['R'] = Piece_Type::Rook,   ['r'] = Piece_Type::Rook,
-    ['Q'] = Piece_Type::Queen,  ['q'] = Piece_Type::Queen,
-    ['K'] = Piece_Type::King,   ['k'] = Piece_Type::King,
-    ['e'] = Piece_Type::Empty
-};
-
-void print_bb(bitboard bb)
+void print_bb(Bitboard bb)
 {
     printf("\nBoard State:\n\n");
     for(int rank=0; rank<8; rank++)
@@ -82,12 +36,12 @@ void print_bb(bitboard bb)
     // printf("En-Passant: %s\n", (en_passant==120) ? "-" : square_to_coord[en_passant]);
 }
 
-void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool &turn, int &castle_right, int &en_passant, int king_pos[])
+void parse_fen_str(const char fen[], Bitboard player_occ_bb[3], Bitboard piece_occ_bb[2][6], bool &turn, int &castle_right, int &en_passant, int king_pos[])
 {
     // 1) Zero out all occupancy bitboards:
     // Zero all bitboards in one shot:
-    memset(player_occ_bb, 0, 3 * sizeof(bitboard));
-    memset(piece_occ_bb, 0, 2 * 6 * sizeof(bitboard));
+    memset(player_occ_bb, 0, 3 * sizeof(Bitboard));
+    memset(piece_occ_bb, 0, 2 * 6 * sizeof(Bitboard));
 
     // 3) Initialize side to move to a default
     turn = 0;
@@ -129,6 +83,8 @@ void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_o
                         spaces = fen[letter] - '0' - 1;
                         CLEAR_ALL_SQUARE(Color::white, idx);
                         CLEAR_ALL_SQUARE(Color::black, idx);
+                        Move_Gen::mailbox[white][idx] = Empty;
+                        Move_Gen::mailbox[black][idx] = Empty;
                     }
                     // if its a letter (piece represenation)
                     else {
@@ -146,11 +102,40 @@ void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_o
                         //
                         // RECAL: enum Piece_Type { Pawn, Knight, Bishop, Rook, Queen, King, Empty };
                         //
-                        int pc_rpt = char_to_piece[fen[letter]];
-                        int p_type = char_to_piece_type[fen[letter]];
+                        if(fen[letter] == 'k' || fen[letter]  == 'K' )
+                        {
+                                king_pos[ (fen[letter] == 'K') ? Color::white : Color::black ] = idx;
+                        }
+                        int pc_rpt = Encoder::char_to_piece[fen[letter]];
+                        int p_type = Encoder::char_to_piece_type[fen[letter]];
                         bool piece_color = (pc_rpt < 6) ? Color::white : Color::black;
                         //
                         SET_SQUARE_SIMPLE(piece_color, p_type, idx);
+
+                        Piece_Type piece;
+                        if(p_type == P | p_type == p)
+                            piece=Pawn;
+                        else if(p_type == N | p_type == n)
+                            piece=Knight;
+                        else if(p_type == B | p_type == b)
+                            piece=Bishop;
+                        else if(p_type == R | p_type == r)
+                            piece=Rook;
+                        else if(p_type == Q | p_type == q)
+                            piece=Queen;
+                        else if(p_type == K | p_type == k)
+                            piece=King;
+
+                        if(piece_color == Color::white)
+                        {
+                            Move_Gen::mailbox[white][idx] = piece;
+                            Move_Gen::mailbox[black][idx] = Empty;
+                        }
+                        else
+                        {
+                            Move_Gen::mailbox[white][idx] = Empty;
+                            Move_Gen::mailbox[black][idx] = piece;
+                        }
                     }
                 }
                 // here know "spaces" is active so we position empty spaces in the board
@@ -160,6 +145,8 @@ void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_o
                 {
                     CLEAR_ALL_SQUARE(Color::white, idx);
                     CLEAR_ALL_SQUARE(Color::black, idx);
+                    Move_Gen::mailbox[white][idx] = Empty;
+                    Move_Gen::mailbox[black][idx] = Empty;
                     spaces--;
                     continue;
                 }
@@ -206,7 +193,7 @@ void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_o
     en_passant = idx;
 }
 
-void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant)
+void print_mini_board(Bitboard player_occ_bb[3], Bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant)
 {
     printf("\nBoard State:\n\n");
     for(int rank = 0; rank<8; rank++)
@@ -217,7 +204,7 @@ void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bo
             // take the 1D array to 2D formula
             int idx = (rank << 3) + file;
 
-            // if this bitboard is set in the all player bitboard
+            // if this Bitboard is set in the all player Bitboard
             if(GET_BIT(player_occ_bb[Color::all_color], idx) )
             {
                 bool piece_color = ( GET_BIT(player_occ_bb[Color::white], idx) ) ? Color::white : Color::black;
@@ -232,7 +219,7 @@ void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bo
                         // we are looking for the set bit
                         if( GET_BIT(piece_occ_bb[Color::white][piece], idx) )
                         {
-                            printf("%s ", unicode_pieces[piece]);
+                            printf("%s ", Encoder::unicode_pieces[piece]);
                         }
                     }
 
@@ -250,7 +237,7 @@ void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bo
                             // enum Piece { P, N, B, R, Q, K, p, n, b, r, q, k, e };
                             // so for the representation + 6 -> Piece
                             // for the index no changes but -> Piece_Type
-                            printf("%s ", unicode_pieces[piece+6]);
+                            printf("%s ", Encoder::unicode_pieces[piece+6]);
                         }
                     }
                 }
@@ -258,7 +245,7 @@ void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bo
             // if the bit is not set then this is an empty square so print and continue
             else
             {
-                printf("%s ", unicode_pieces[Piece::e]);
+                printf("%s ", Encoder::unicode_pieces[Piece::e]);
             }
         }
         printf("\n");
@@ -277,10 +264,10 @@ void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bo
                                     (castle_right & Castle_Right::kc) ? 'k' : '-',
                                     (castle_right & Castle_Right::qc) ? 'q' : '-' );
 
-    printf("En-Passant: %s\n", (en_passant==64) ? "-" : square_to_coord[en_passant]);
+    printf("En-Passant: %s\n", (en_passant==64) ? "-" : Encoder::square_to_coord[en_passant]);
 }
 
-void print_attack_map(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], const bool turn)
+void print_attack_map(Bitboard player_occ_bb[3], Bitboard piece_occ_bb[2][6], const bool turn)
 {
     printf("\nAttack Map:\n\n");
     for(int rank = 0; rank<8; rank++)
@@ -301,5 +288,7 @@ void print_attack_map(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], co
 
     const char* toMove = (turn) ? "Black" : "White";
     printf("Moves: %s\n", toMove);
-
 }
+
+} // end Utils namespace
+} // end RedStone namespace

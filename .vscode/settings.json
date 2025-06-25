@@ -44,6 +44,7 @@
         "stack": "cpp",
         "algorithm": "cpp",
         "chrono": "cpp",
-        "functional": "cpp"
+        "functional": "cpp",
+        "valarray": "cpp"
     }
 }

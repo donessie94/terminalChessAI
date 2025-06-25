@@ -1,43 +1,72 @@
 #pragma once
-#include "utils.h"
-
-// Castle rights dec 15 => bin 1111 => all castle rights
-//               dec  8 => bin 1000 => qc only
-//               dec  1 => bin 0001 => KC only etc...
-enum Castle_Right { KC = 1, QC = 2, kc = 4, qc = 8 };
+#include "../move/encoder.h"
+#include "../move/move_gen.h"
 
 //
-enum Color { white, black, all_color };
 
-// Piece enum
-// NOTE wwe moved the empty at the end so the pieces allign nicely
-enum Piece { P, N, B, R, Q, K, p, n, b, r, q, k, e };
+namespace RedStone{
 
-// fck it ill just do this for the arrays indexing of the pieces
-enum Piece_Type { Pawn, Knight, Bishop, Rook, Queen, King, Empty };
+namespace Utils{
 
-enum Square {
-    a8,  b8,  c8,  d8,  e8,  f8,  g8,  h8,
-    a7,  b7,  c7,  d7,  e7,  f7,  g7,  h7,
-    a6,  b6,  c6,  d6,  e6,  f6,  g6,  h6,
-    a5,  b5,  c5,  d5,  e5,  f5,  g5,  h5,
-    a4,  b4,  c4,  d4,  e4,  f4,  g4,  h4,
-    a3,  b3,  c3,  d3,  e3,  f3,  g3,  h3,
-    a2,  b2,  c2,  d2,  e2,  f2,  g2,  h2,
-    a1,  b1,  c1,  d1,  e1,  f1,  g1,  h1, no_sqr
+void print_bb(Bitboard bb);
+
+void print_mini_board(Bitboard player_occ_bb[3], Bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant);
+void print_attack_map(Bitboard player_occ_bb[3], Bitboard piece_occ_bb[2][6], const bool turn);
+void parse_fen_str(const char fen[], Bitboard player_occ_bb[3], Bitboard piece_occ_bb[2][6], bool &turn, int &castle_right, int &en_passant, int king_pos[]);
+
+// human‐readable names for Piece_Type 0..6
+static const char* piece_names[] = {
+    "Pawn", "Knight", "Bishop", "Rook", "Queen", "King", "Empty"
 };
 
-extern const char start_position[];         // FEN strings
-extern const char tricky_position[];
+// static inline void print_move_info(Move m) {
+//     int from       = Encoder::move_get_from(m);
+//     int to         = Encoder::move_get_to(m);
+//     Piece_Type mv  = Encoder::move_get_moved_piece(m);
+//     Piece_Type cp  = Encoder::move_get_captured_piece(m);
+//     Piece_Type pp  = Encoder::move_get_promo_piece(m);
+//     uint32_t flags = Encoder::move_get_flags(m);
 
-//
-extern const char *square_to_coord[128];    // coordinate strings
-extern const char ascii_pieces[];           // ASCII piece symbols
-extern const char *unicode_pieces[];        // Unicode piece symbols
-extern const int char_to_piece[];
+//     // decode file/rank for a8..h1 mapping:
+//     char from_file = 'a' + (from & 7);
+//     char from_rank = '8' - (from >> 3);
+//     char to_file   = 'a' + (to   & 7);
+//     char to_rank   = '8' - (to   >> 3);
 
-void print_bb(bitboard bb);
+//     printf("Moved:     %s from %c%c to %c%c\n",
+//            piece_names[(int)mv],
+//            from_file, from_rank,
+//            to_file,   to_rank);
 
-void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant);
-void print_attack_map(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], const bool turn);
-void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool &turn, int &castle_right, int &en_passant, int king_pos[]);
+//     printf("Captured:  %s\n", piece_names[(int)cp]);
+//     printf("Promoted:  %s\n", piece_names[(int)pp]);
+
+//     printf("Flags:     ");
+//     int any = 0;
+
+//     #define FLAG_PRINT(f, name) \
+//       do { if (flags & (f)) { \
+//             if (any) printf(" | "); \
+//             printf("%s", name); \
+//             any = 1; \
+//           } } while (0)
+
+//     FLAG_PRINT(FLAG_CAPTURE,          "Capture");
+//     FLAG_PRINT(FLAG_EN_PASSANT,       "EnPassant");
+//     FLAG_PRINT(FLAG_DOUBLE_PAWN,      "DoublePawn");
+//     FLAG_PRINT(FLAG_CASTLE_KINGSIDE,  "CastleK");
+//     FLAG_PRINT(FLAG_CASTLE_QUEENSIDE, "CastleQ");
+//     FLAG_PRINT(FLAG_PROMOTION,        "Promotion");
+//     FLAG_PRINT(FLAG_CHECK,            "Check");
+//     FLAG_PRINT(FLAG_DISCOVERED_CHECK, "DiscCheck");
+
+//     if (!any) {
+//         printf("None");
+//     }
+//     printf("\n\n");
+
+//     #undef FLAG_PRINT
+// }
+
+} // end Utils namespace
+} // end RedStone namespace
