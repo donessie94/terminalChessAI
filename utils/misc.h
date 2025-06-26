@@ -19,54 +19,54 @@ static const char* piece_names[] = {
     "Pawn", "Knight", "Bishop", "Rook", "Queen", "King", "Empty"
 };
 
-// static inline void print_move_info(Move m) {
-//     int from       = Encoder::move_get_from(m);
-//     int to         = Encoder::move_get_to(m);
-//     Piece_Type mv  = Encoder::move_get_moved_piece(m);
-//     Piece_Type cp  = Encoder::move_get_captured_piece(m);
-//     Piece_Type pp  = Encoder::move_get_promo_piece(m);
-//     uint32_t flags = Encoder::move_get_flags(m);
+static inline void print_move_info(Move m) {
+    int from       = Encoder::move_get_from(m);
+    int to         = Encoder::move_get_to(m);
+    Piece_Type mv  = Encoder::move_get_moved_piece(m);
+    Piece_Type cp  = Encoder::move_get_captured_piece(m);
+    Piece_Type pp  = Encoder::move_get_promo_piece(m);
+    uint32_t flags = Encoder::move_get_flags(m);
 
-//     // decode file/rank for a8..h1 mapping:
-//     char from_file = 'a' + (from & 7);
-//     char from_rank = '8' - (from >> 3);
-//     char to_file   = 'a' + (to   & 7);
-//     char to_rank   = '8' - (to   >> 3);
+    // decode file/rank for a8..h1 mapping:
+    char from_file = 'a' + (from & 7);
+    char from_rank = '8' - (from >> 3);
+    char to_file   = 'a' + (to   & 7);
+    char to_rank   = '8' - (to   >> 3);
 
-//     printf("Moved:     %s from %c%c to %c%c\n",
-//            piece_names[(int)mv],
-//            from_file, from_rank,
-//            to_file,   to_rank);
+    printf("Moved:     %s from %c%c to %c%c\n",
+           piece_names[(int)mv],
+           from_file, from_rank,
+           to_file,   to_rank);
 
-//     printf("Captured:  %s\n", piece_names[(int)cp]);
-//     printf("Promoted:  %s\n", piece_names[(int)pp]);
+    printf("Captured:  %s\n", piece_names[(int)cp]);
+    printf("Promoted:  %s\n", piece_names[(int)pp]);
 
-//     printf("Flags:     ");
-//     int any = 0;
+    printf("Flags:     ");
+    int any = 0;
 
-//     #define FLAG_PRINT(f, name) \
-//       do { if (flags & (f)) { \
-//             if (any) printf(" | "); \
-//             printf("%s", name); \
-//             any = 1; \
-//           } } while (0)
+    #define FLAG_PRINT(f, name) \
+      do { if (flags & (f)) { \
+            if (any) printf(" | "); \
+            printf("%s", name); \
+            any = 1; \
+          } } while (0)
 
-//     FLAG_PRINT(FLAG_CAPTURE,          "Capture");
-//     FLAG_PRINT(FLAG_EN_PASSANT,       "EnPassant");
-//     FLAG_PRINT(FLAG_DOUBLE_PAWN,      "DoublePawn");
-//     FLAG_PRINT(FLAG_CASTLE_KINGSIDE,  "CastleK");
-//     FLAG_PRINT(FLAG_CASTLE_QUEENSIDE, "CastleQ");
-//     FLAG_PRINT(FLAG_PROMOTION,        "Promotion");
-//     FLAG_PRINT(FLAG_CHECK,            "Check");
-//     FLAG_PRINT(FLAG_DISCOVERED_CHECK, "DiscCheck");
+    FLAG_PRINT(Encoder::FLAG_CAPTURE,          "Capture");
+    FLAG_PRINT(Encoder::FLAG_EN_PASSANT,       "EnPassant");
+    FLAG_PRINT(Encoder::FLAG_DOUBLE_PAWN,      "DoublePawn");
+    FLAG_PRINT(Encoder::FLAG_CASTLE_KINGSIDE,  "CastleK");
+    FLAG_PRINT(Encoder::FLAG_CASTLE_QUEENSIDE, "CastleQ");
+    FLAG_PRINT(Encoder::FLAG_PROMOTION,        "Promotion");
+    FLAG_PRINT(Encoder::FLAG_CHECK,            "Check");    
+    FLAG_PRINT(Encoder::FLAG_DISCOVERED_CHECK, "DiscCheck");
 
-//     if (!any) {
-//         printf("None");
-//     }
-//     printf("\n\n");
+    if (!any) {
+        printf("None");
+    }
+    printf("\n\n");
 
-//     #undef FLAG_PRINT
-// }
+    #undef FLAG_PRINT
+}
 
 } // end Utils namespace
 } // end RedStone namespace
