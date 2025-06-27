@@ -42,7 +42,48 @@ enum Color { white, black, all_color };
 // NOTE wwe moved the empty at the end so the pieces allign nicely
 enum Piece { P, N, B, R, Q, K, p, n, b, r, q, k, e };
 
+
+// ┌─────────────┬───────────────┐
+// │ Bits 0–6    │ Bits 7–10     │
+// │ en_passant  │ castle_right  │
+// │   (0–64)    │   (KC,QC,kc,qc)│
+// └─────────────┴───────────────┘
+// Bits 11–15 unused
+using UndoPacked = uint16_t;
+
 namespace Encoder{
+
+// Undo ============================================================================================================
+// Masks & shifts
+static constexpr uint16_t EP_MASK    = 0x007F;     // 0b0000 0000 0111 1111
+static constexpr uint16_t CR_MASK    = 0x0780;     // 0b0000 0111 1000 0000
+static constexpr int      CR_SHIFT   = 7;
+
+// Pack en_passant (0–64) and castle_right (bitmask 0–15) into one word
+static inline UndoPacked pack_undo(int en_passant, int castle_right) {
+    return static_cast<UndoPacked>(
+         (en_passant     & EP_MASK)
+       | ((castle_right & 0xF) << CR_SHIFT)
+    );
+}
+
+// Extractors
+static inline int get_en_passant(UndoPacked u) {
+    return  u & EP_MASK;
+}
+static inline int get_castle_right(UndoPacked u) {
+    return (u & CR_MASK) >> CR_SHIFT;
+}
+
+// Mutators
+static inline void set_en_passant(UndoPacked &u, int en_passant) {
+    u = static_cast<UndoPacked>((u & ~EP_MASK) | (en_passant & EP_MASK));
+}
+static inline void set_castle_right(UndoPacked &u, int castle_right) {
+    u = static_cast<UndoPacked>((u & ~CR_MASK)
+                              | ((castle_right & 0xF) << CR_SHIFT));
+}
+// Undo ============================================================================================================
 
 extern const char *square_to_coord[128];    // coordinate strings
 extern const char ascii_pieces[];           // ASCII piece symbols

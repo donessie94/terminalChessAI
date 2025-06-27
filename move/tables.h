@@ -69,6 +69,44 @@ using Bitboard = uint64_t;
 
 namespace Tables{
 
+
+// Castling rights bits:
+//  KC = 1 (White kingside), QC = 2 (White queenside),
+//  kc = 4 (Black kingside), qc = 8 (Black queenside)
+/*
+  How rights are masked on each square move:
+      initial rights = 1111 (15)
+
+  White:
+    King moved:            1111 & 1100 = 1100 (12)
+    White king’s rook:     1111 & 1110 = 1110 (14)
+    White queen’s rook:    1111 & 1101 = 1101 (13)
+
+  Black:
+    King moved:            1111 & 0011 = 0011 (3)
+    Black king’s rook:     1111 & 1011 = 1011 (11)
+    Black queen’s rook:    1111 & 0111 = 0111 (7)
+*/
+// For each square a8…h1, mask out any castling rights invalidated by moving from that square.
+static constexpr int castling_table[64] = {
+    //  a8   b8   c8   d8   e8   f8   g8   h8
+       7,   15,  15,  15,   3,  15,  15,  11,
+    //  a7   b7   c7   d7   e7   f7   g7   h7
+      15,   15,  15,  15,  15,  15,  15,  15,
+    //  a6   b6   c6   d6   e6   f6   g6   h6
+      15,   15,  15,  15,  15,  15,  15,  15,
+    //  a5   b5   c5   d5   e5   f5   g5   h5
+      15,   15,  15,  15,  15,  15,  15,  15,
+    //  a4   b4   c4   d4   e4   f4   g4   h4
+      15,   15,  15,  15,  15,  15,  15,  15,
+    //  a3   b3   c3   d3   e3   f3   g3   h3
+      15,   15,  15,  15,  15,  15,  15,  15,
+    //  a2   b2   c2   d2   e2   f2   g2   h2
+      15,   15,  15,  15,  15,  15,  15,  15,
+    //  a1   b1   c1   d1   e1   f1   g1   h1
+      13,   15,  15,  15,  12,  15,  15,  14
+};
+
 constexpr Bitboard Rank8 = 0x00000000000000FFULL;
 constexpr Bitboard Rank7 = 0x000000000000FF00ULL;
 constexpr Bitboard Rank6 = 0x0000000000FF0000ULL;

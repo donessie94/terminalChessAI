@@ -3,7 +3,13 @@
 
 namespace RedStone{
 
+static constexpr int MAX_DEPTH = 6;
+static constexpr int MAX_MOVES = 218;
+
 // Helpers Macros ===================================================================================================================================================
+
+// flips the nth bit of a bitboard
+#define FLIP_BIT(x, n)  ((x) ^= (1ULL << (n)))
 
 // macro to clear (pop, set to 0 same) all specific (given) bit from a given side
 // RECALL:
@@ -73,9 +79,11 @@ extern int en_passant;
 extern bool turn;
 
 // big enough so all possible move in any position fit here
-extern Move valid_moves[218];
+extern Move valid_moves[MAX_DEPTH][MAX_MOVES];
 // tracks how many moves were generated on this turn
-extern int move_count;
+// here we use the fact DFS goes all the way down and alwasy have 1 valid moves per depth
+// you overwrite it over and over aagin
+extern int move_count[MAX_DEPTH];
 
 // this one stores the pinned pieces occupancy Bitboard
 extern Bitboard pin_mask;
@@ -105,7 +113,8 @@ void inline generate_pin_mask()
 {
     /* reset pin_mask first */
     pin_mask = 0ULL;
-    std::memset(pin_ray_mask, 0, sizeof(pin_ray_mask));
+    // std::memset(pin_ray_mask, 0, sizeof(pin_ray_mask));
+    std::memset(pin_ray_mask, 0, 512);
 
     /* we want to AND the rays outwards from the king position (orthogonal and diagonal rays) */
     /* with the slider pieces occupancy Bitboards of the enemy (queen/rook -> orthogonal | queen/bishop -> diagonal) */
@@ -121,7 +130,7 @@ void inline generate_pin_mask()
 
     //
     Bitboard potential_diag_attackers = Tables::diagonal_ray_mask[king_sq] & opp_queen_bishop_occ;
-    Bitboard potential_orth_attackers = Tables::diagonal_ray_mask[king_sq] & opp_queen_rook_occ;
+    Bitboard potential_orth_attackers = Tables::orthogonal_ray_mask[king_sq] & opp_queen_rook_occ;
 
     /* now we must check if from these potential sliders attackers positions there are a single blocking piece to the king */
     /* basically "in between" king square and potential slider square precomputed table will give us a Bitboard we can use */
@@ -183,7 +192,8 @@ void inline generate_discovered_mask()
 {
     /* reset discovered masks first */
     discovered_mask = 0ULL;
-    std::memset(discovered_ray_mask, 0, sizeof(discovered_ray_mask));
+    // std::memset(discovered_ray_mask, 0, sizeof(discovered_ray_mask));
+    std::memset(discovered_ray_mask, 0, 512);
 
     // save opponent king square
     int opp_king_sq = king_position[!turn];
@@ -274,7 +284,7 @@ void inline generate_check_mask()
 
     // build the all attackers bitboard here:
     /* Pawn attacks: if an enemy pawn on some sq attacks our king_sq */
-    attackers |= ( Tables::pawn_attack_bb[opp][ally_king_sq] & opp_pawn_occ );
+    attackers |= ( Tables::pawn_attack_bb[turn][ally_king_sq] & opp_pawn_occ ); // opp for turn
     /* Knight attacks */
     attackers |= ( Tables::knight_attack_bb[ally_king_sq] & opp_knight_occ );
     // diagonal attacks
@@ -323,7 +333,7 @@ void inline generate_check_mask()
     /* if num_attackers >= 2: double‐check, no non-king moves allowed (check_mask unused) */
 }
 
-void inline generate_non_capture_pawn_moves()
+void inline generate_non_capture_pawn_moves(int depth)
 {
     Bitboard ally_pawn_occ = (turn == white) ? piece_occ_bb[white][Pawn] : piece_occ_bb[black][Pawn];
     Bitboard ally_home_pawns = (turn == white) ? ( ally_pawn_occ & Tables::Rank2 ) : ( ally_pawn_occ & Tables::Rank7 );
@@ -344,7 +354,7 @@ void inline generate_non_capture_pawn_moves()
         uint32_t move_flags = 0ULL;
 
         //
-        Bitboard ally_pwn_occ_bb = 1ULL << ally_pwn_sq;
+        Bitboard ally_pwn_occ_bb = (1ULL << ally_pwn_sq);
 
         // lets create the push1 forward occupancy bitboard
         Bitboard push1_occ = (turn == white) ? ( ally_pwn_occ_bb >> 8 ) : ( ally_pwn_occ_bb << 8 );
@@ -362,8 +372,8 @@ void inline generate_non_capture_pawn_moves()
                 if(pin_ray_mask[ally_pwn_sq] & ( 1ULL << to_sq ))
                 {
                     // construct the move and save it
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Empty, move_flags);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Empty, move_flags);
+                    move_count[depth]++;
                 }
                 else
                     continue;   //  if the move was not in the right direction to keep blocking the check we skip to next pawn (this pawn push leaves king in check)
@@ -372,8 +382,8 @@ void inline generate_non_capture_pawn_moves()
             else
             {
                 // construct the move and save it
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Empty, move_flags);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Empty, move_flags);
+                move_count[depth]++;
             }
 
             // if candidate for a 2 push (if it was an ally home pawn basically)
@@ -389,8 +399,8 @@ void inline generate_non_capture_pawn_moves()
                 if( (push2_occ & all_occ) == 0 )
                 {
                     move_flags |= Encoder::FLAG_DOUBLE_PAWN;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq2, Pawn, Empty, Empty, move_flags);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq2, Pawn, Empty, Empty, move_flags);
+                    move_count[depth]++;
                 }
             }
         }
@@ -407,7 +417,7 @@ void inline generate_non_capture_pawn_moves()
         // Note we can figure out the flag from the promo piece so we dont need the flag
         //uint32_t move_flags = Encoder::FLAG_PROMOTION;    // not needed
 
-        Bitboard ally_pwn_occ_bb = 1ULL << ally_pwn_sq;
+        Bitboard ally_pwn_occ_bb = (1ULL << ally_pwn_sq);
 
         // lets create the push1 forward occupancy bitboard
         Bitboard push1_occ = (turn == white) ? ( ally_pwn_occ_bb >> 8 ) : ( ally_pwn_occ_bb << 8 );
@@ -425,14 +435,14 @@ void inline generate_non_capture_pawn_moves()
                 if(pin_ray_mask[ally_pwn_sq] & ( 1ULL << to_sq ))
                 {
                     // construct the move and save it
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u);
+                    move_count[depth]++;
                 }
                 else
                     continue;   //  if the move was not in the right direction to keep blocking the check we skip to next pawn (this pawn push leaves king in check)
@@ -441,20 +451,20 @@ void inline generate_non_capture_pawn_moves()
             else
             {
                 // construct the move and save it
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_capture_pawn_moves()
+void inline generate_capture_pawn_moves(int depth)
 {
     Bitboard ally_pawn_occ = (turn == white) ? piece_occ_bb[white][Pawn] : piece_occ_bb[black][Pawn];
     Bitboard ally_to_promo_pawns = (turn == white) ? ( ally_pawn_occ & Tables::Rank7 ) : ( ally_pawn_occ & Tables::Rank2 );
@@ -493,26 +503,76 @@ void inline generate_capture_pawn_moves()
                 // if piece is pinned but the move still blocks (along the same pinned ray) then move is valid
                 if(pin_ray_mask[ally_pwn_sq] & move_bb)
                 {
-                    // check if the capture is enpassant
-                    if(en_passant == move_idx)
-                        move_flags |= Encoder::FLAG_EN_PASSANT;
-
                     // lets figure out what piece this move is capturing (using our mailbox representation)
                     Piece_Type captured = mailbox[!turn][move_idx];
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Empty, move_flags);
-                    move_count++;
+
+                    // en passant is anoyying ==============================================================
+                    // en_passant captures removes 2 pieces so check mask wont catch it :/
+                    if (en_passant == move_idx)
+                    {
+                        move_flags |= Encoder::FLAG_EN_PASSANT;
+                        captured = Pawn;
+
+                        // precompute the relevant bit-masks
+                        Bitboard cap_bb    = 1ULL << (move_idx + (turn==white ? 8 : -8));
+
+                        // compute the “after” occupancy of *all* pieces
+                        // remove pawn on from_sq, place pawn on to_sq, remove captured pawn
+                        Bitboard occ_before = player_occ_bb[all_color];
+                        Bitboard occ_after  = occ_before
+                                            ^ ally_pwn_occ_bb       // pawn leaves from_sq
+                                            ^ move_bb               // pawn arrives at to_sq
+                                            ^ cap_bb;               // captured pawn disappears
+
+                        // test king safety on the new occ
+                        int king_sq = king_position[turn];
+                        if (IS_SQUARE_ATTACKED(!turn, occ_after, king_sq)) {
+                        // illegal EP, skip it
+                        continue;
+                        }
+                    }
+                    // ==========================================================================================
+
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Empty, move_flags); ////////////////////////////
+                    move_count[depth]++;
+
                 }
             }
             // piece is not pinned so move is valid
             else
             {
-                if(en_passant == move_idx)
-                    move_flags |= Encoder::FLAG_EN_PASSANT;
-
                 // lets figure out what piece this move is capturing
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Empty, move_flags);
-                move_count++;
+
+                // en passant is anoyying ==============================================================
+                // en_passant captures removes 2 pieces so check mask wont catch it :/
+                if (en_passant == move_idx)
+                {
+                    move_flags |= Encoder::FLAG_EN_PASSANT;
+                    captured = Pawn;
+
+                    // precompute the relevant bit-masks
+                    Bitboard cap_bb    = 1ULL << (move_idx + (turn==white ? 8 : -8));
+
+                    // compute the “after” occupancy of *all* pieces
+                    // remove pawn on from_sq, place pawn on to_sq, remove captured pawn
+                    Bitboard occ_before = player_occ_bb[all_color];
+                    Bitboard occ_after  = occ_before
+                                        ^ ally_pwn_occ_bb       // pawn leaves from_sq
+                                        ^ move_bb               // pawn arrives at to_sq
+                                        ^ cap_bb;               // captured pawn disappears
+
+                    // test king safety on the new occ
+                    int king_sq = king_position[turn];
+                    if (IS_SQUARE_ATTACKED(!turn, occ_after, king_sq)) {
+                    // illegal EP, skip it
+                    continue;
+                    }
+                }
+                // ==========================================================================================
+
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Empty, move_flags);
+                move_count[depth]++;
             }
         }
     }
@@ -549,14 +609,14 @@ void inline generate_capture_pawn_moves()
                     // lets figure out what piece this move is capturing (using our mailbox representation)
                     Piece_Type captured = mailbox[!turn][move_idx];
 
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Queen, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Rook, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Bishop, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Knight, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Queen, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Rook, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Bishop, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Knight, 0u);
+                    move_count[depth]++;
                 }
             }
             // piece is not pinned so move is valid
@@ -564,20 +624,20 @@ void inline generate_capture_pawn_moves()
             {
                 // lets figure out what piece this move is capturing
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Queen, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Rook, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Bishop, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Knight, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Queen, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Rook, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Bishop, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Knight, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_king_moves()
+void inline generate_king_moves(int depth)
 {
     Bitboard opp_king_occ = piece_occ_bb[!turn][King];
     Bitboard opp_occ = player_occ_bb[!turn];
@@ -608,8 +668,8 @@ void inline generate_king_moves()
 
         // lets figure out what piece this move is capturing
         Piece_Type captured = mailbox[!turn][move_idx];
-        valid_moves[move_count] = Encoder::construct_move(king_sq, move_idx, King, captured, Empty, 0u);
-        move_count++;
+        valid_moves[depth][move_count[depth]] = Encoder::construct_move(king_sq, move_idx, King, captured, Empty, 0u);
+        move_count[depth]++;
     }
 
     // non capture moves
@@ -627,12 +687,12 @@ void inline generate_king_moves()
         if(GET_KING_ATTACK(move_idx) & opp_king_occ)
             continue;
 
-        valid_moves[move_count] = Encoder::construct_move(king_sq, move_idx, King, Empty, Empty, 0u);
-        move_count++;
+        valid_moves[depth][move_count[depth]] = Encoder::construct_move(king_sq, move_idx, King, Empty, Empty, 0u);
+        move_count[depth]++;
     }
 }
 
-void inline generate_castle_moves()
+void inline generate_castle_moves(int depth)
 {
     Bitboard all_occ = player_occ_bb[all_color];
 
@@ -650,8 +710,8 @@ void inline generate_castle_moves()
             {
                 uint32_t move_flags = 0ULL;
                 move_flags |= Encoder::FLAG_CASTLE_KINGSIDE;
-                valid_moves[move_count] = Encoder::construct_move(e1, g1, King, Empty, Empty, move_flags);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(e1, g1, King, Empty, Empty, move_flags);
+                move_count[depth]++;
             }
         }
         if( (castle_right & QC) ? ( all_occ & QC_squares_mask ) == 0 : false )
@@ -660,8 +720,8 @@ void inline generate_castle_moves()
             {
                 uint32_t move_flags = 0ULL;
                 move_flags |= Encoder::FLAG_CASTLE_QUEENSIDE;
-                valid_moves[move_count] = Encoder::construct_move(e1, c1, King, Empty, Empty, move_flags);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(e1, c1, King, Empty, Empty, move_flags);
+                move_count[depth]++;
             }
         }
     }
@@ -680,8 +740,8 @@ void inline generate_castle_moves()
             {
                 uint32_t move_flags = 0ULL;
                 move_flags |= Encoder::FLAG_CASTLE_KINGSIDE;
-                valid_moves[move_count] = Encoder::construct_move(e8, g8, King, Empty, Empty, move_flags);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(e8, g8, King, Empty, Empty, move_flags);
+                move_count[depth]++;
             }
         }
         if( (castle_right & qc) ? ( all_occ & qc_squares_mask ) == 0 : false )
@@ -690,14 +750,14 @@ void inline generate_castle_moves()
             {
                 uint32_t move_flags = 0ULL;
                 move_flags |= Encoder::FLAG_CASTLE_QUEENSIDE;
-                valid_moves[move_count] = Encoder::construct_move(e8, c8, King, Empty, Empty, move_flags);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(e8, c8, King, Empty, Empty, move_flags);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_knight_moves()
+void inline generate_knight_moves(int depth)
 {
     Bitboard ally_knights_occ = piece_occ_bb[turn][Knight];
     Bitboard opp_occ = player_occ_bb[!turn];
@@ -733,8 +793,8 @@ void inline generate_knight_moves()
             {
                 // lets figure out what piece this move is capturing
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(this_knight_sq, move_idx, Knight, captured, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_knight_sq, move_idx, Knight, captured, Empty, 0u);
+                move_count[depth]++;
             }
         }
 
@@ -748,14 +808,14 @@ void inline generate_knight_moves()
             // piece is not pinned so move is valid
             else
             {
-                valid_moves[move_count] = Encoder::construct_move(this_knight_sq, move_idx, Knight, Empty, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_knight_sq, move_idx, Knight, Empty, Empty, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_bishop_moves()
+void inline generate_bishop_moves(int depth)
 {
     Bitboard ally_bishops_occ = piece_occ_bb[turn][Bishop];
     Bitboard opp_occ = player_occ_bb[!turn];
@@ -793,8 +853,8 @@ void inline generate_bishop_moves()
                 {
                     // lets figure out what piece this move is capturing (using our mailbox representation)
                     Piece_Type captured = mailbox[!turn][move_idx];
-                    valid_moves[move_count] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             // piece is not pinned so move is valid
@@ -802,8 +862,8 @@ void inline generate_bishop_moves()
             {
                 // lets figure out what piece this move is capturing
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u);
+                move_count[depth]++;
             }
         }
         // non capture moves
@@ -816,20 +876,20 @@ void inline generate_bishop_moves()
             {
                 if(pin_ray_mask[this_bishop_sq] & move_bb)
                 {
-                    valid_moves[move_count] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, Empty, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, Empty, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             else
             {
-                valid_moves[move_count] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, Empty, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, Empty, Empty, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_rook_moves()
+void inline generate_rook_moves(int depth)
 {
     Bitboard ally_rooks_occ    = piece_occ_bb[turn][Rook];
     Bitboard opp_occ           = player_occ_bb[!turn];
@@ -858,15 +918,15 @@ void inline generate_rook_moves()
                 if (pin_ray_mask[this_rook_sq] & move_bb)
                 {
                     Piece_Type captured = mailbox[!turn][move_idx];
-                    valid_moves[move_count] = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             else
             {
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u);
+                move_count[depth]++;
             }
         }
 
@@ -880,20 +940,20 @@ void inline generate_rook_moves()
             {
                 if (pin_ray_mask[this_rook_sq] & move_bb)
                 {
-                    valid_moves[move_count] = Encoder::construct_move(this_rook_sq, move_idx, Rook, Empty, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_rook_sq, move_idx, Rook, Empty, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             else
             {
-                valid_moves[move_count] = Encoder::construct_move(this_rook_sq, move_idx, Rook, Empty, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_rook_sq, move_idx, Rook, Empty, Empty, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_queen_moves()
+void inline generate_queen_moves(int depth)
 {
     Bitboard ally_queens_occ    = piece_occ_bb[turn][Queen];
     Bitboard opp_occ            = player_occ_bb[!turn];
@@ -922,15 +982,15 @@ void inline generate_queen_moves()
                 if (pin_ray_mask[this_queen_sq] & move_bb)
                 {
                     Piece_Type captured = mailbox[!turn][move_idx];
-                    valid_moves[move_count] = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             else
             {
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u);
+                move_count[depth]++;
             }
         }
 
@@ -944,21 +1004,21 @@ void inline generate_queen_moves()
             {
                 if (pin_ray_mask[this_queen_sq] & move_bb)
                 {
-                    valid_moves[move_count] = Encoder::construct_move(this_queen_sq, move_idx, Queen, Empty, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_queen_sq, move_idx, Queen, Empty, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             else
             {
-                valid_moves[move_count] = Encoder::construct_move(this_queen_sq, move_idx, Queen, Empty, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_queen_sq, move_idx, Queen, Empty, Empty, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
 
-void inline generate_non_capture_pawn_moves_in_check()
+void inline generate_non_capture_pawn_moves_in_check(int depth)
 {
     Bitboard ally_pawn_occ = (turn == white) ? piece_occ_bb[white][Pawn] : piece_occ_bb[black][Pawn];
     Bitboard ally_home_pawns = (turn == white) ? ( ally_pawn_occ & Tables::Rank2 ) : ( ally_pawn_occ & Tables::Rank7 );
@@ -1011,8 +1071,8 @@ void inline generate_non_capture_pawn_moves_in_check()
                 if(pin_ray_mask[ally_pwn_sq] & ( 1ULL << to_sq ))
                 {
                     // construct the move and save it
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Empty, move_flags);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Empty, move_flags);
+                    move_count[depth]++;
                 }
                 else
                     continue;   //  if the move was not in the right direction to keep blocking the check we skip to next pawn (this pawn push leaves king in check)
@@ -1021,8 +1081,8 @@ void inline generate_non_capture_pawn_moves_in_check()
             else
             {
                 // construct the move and save it
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Empty, move_flags);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Empty, move_flags);
+                move_count[depth]++;
             }
 
             // if move does not block we continue
@@ -1041,8 +1101,8 @@ void inline generate_non_capture_pawn_moves_in_check()
                 if( (push2_occ & all_occ) == 0 )
                 {
                     move_flags |= Encoder::FLAG_DOUBLE_PAWN;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq2, Pawn, Empty, Empty, move_flags);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq2, Pawn, Empty, Empty, move_flags);
+                    move_count[depth]++;
                 }
             }
         }
@@ -1086,14 +1146,14 @@ void inline generate_non_capture_pawn_moves_in_check()
                 if(pin_ray_mask[ally_pwn_sq] & ( 1ULL << to_sq ))
                 {
                     // construct the move and save it
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u);
+                    move_count[depth]++;
                 }
                 else
                     continue;   //  if the move was not in the right direction to keep blocking the check we skip to next pawn (this pawn push leaves king in check)
@@ -1102,20 +1162,20 @@ void inline generate_non_capture_pawn_moves_in_check()
             else
             {
                 // construct the move and save it
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_capture_pawn_moves_in_check()
+void inline generate_capture_pawn_moves_in_check(int depth)
 {
     Bitboard ally_pawn_occ = (turn == white) ? piece_occ_bb[white][Pawn] : piece_occ_bb[black][Pawn];
     Bitboard ally_to_promo_pawns = (turn == white) ? ( ally_pawn_occ & Tables::Rank7 ) : ( ally_pawn_occ & Tables::Rank2 );
@@ -1158,26 +1218,75 @@ void inline generate_capture_pawn_moves_in_check()
                 // if piece is pinned but the move still blocks (along the same pinned ray) then move is valid
                 if(pin_ray_mask[ally_pwn_sq] & move_bb)
                 {
-                    // check if the capture is enpassant
-                    if(en_passant == move_idx)
-                        move_flags |= Encoder::FLAG_EN_PASSANT;
-
                     // lets figure out what piece this move is capturing (using our mailbox representation)
                     Piece_Type captured = mailbox[!turn][move_idx];
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Empty, move_flags);
-                    move_count++;
+
+                    // en passant is anoyying ==============================================================
+                    // en_passant captures removes 2 pieces so check mask wont catch it :/
+                    if (en_passant == move_idx)
+                    {
+                        move_flags |= Encoder::FLAG_EN_PASSANT;
+                        captured = Pawn;
+
+                        // precompute the relevant bit-masks
+                        Bitboard cap_bb    = 1ULL << (move_idx + (turn==white ? 8 : -8));
+
+                        // compute the “after” occupancy of *all* pieces
+                        // remove pawn on from_sq, place pawn on to_sq, remove captured pawn
+                        Bitboard occ_before = player_occ_bb[all_color];
+                        Bitboard occ_after  = occ_before
+                                            ^ ally_pwn_occ_bb       // pawn leaves from_sq
+                                            ^ move_bb               // pawn arrives at to_sq
+                                            ^ cap_bb;               // captured pawn disappears
+
+                        // test king safety on the new occ
+                        int king_sq = king_position[turn];
+                        if (IS_SQUARE_ATTACKED(!turn, occ_after, king_sq)) {
+                        // illegal EP, skip it
+                        continue;
+                        }
+                    }
+                    // ==========================================================================================
+
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Empty, move_flags);
+                    move_count[depth]++;
                 }
             }
             // piece is not pinned so move is valid
             else
             {
-                if(en_passant == move_idx)
-                    move_flags |= Encoder::FLAG_EN_PASSANT;
-
-                // lets figure out what piece this move is capturing
+                // lets figure out what piece this move is capturing (using our mailbox representation)
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Empty, move_flags);
-                move_count++;
+
+                // en passant is anoyying ==============================================================
+                // en_passant captures removes 2 pieces so check mask wont catch it :/
+                if (en_passant == move_idx)
+                {
+                    move_flags |= Encoder::FLAG_EN_PASSANT;
+                    captured = Pawn;
+
+                    // precompute the relevant bit-masks
+                    Bitboard cap_bb    = 1ULL << (move_idx + (turn==white ? 8 : -8));
+
+                    // compute the “after” occupancy of *all* pieces
+                    // remove pawn on from_sq, place pawn on to_sq, remove captured pawn
+                    Bitboard occ_before = player_occ_bb[all_color];
+                    Bitboard occ_after  = occ_before
+                                        ^ ally_pwn_occ_bb       // pawn leaves from_sq
+                                        ^ move_bb               // pawn arrives at to_sq
+                                        ^ cap_bb;               // captured pawn disappears
+
+                    // test king safety on the new occ
+                    int king_sq = king_position[turn];
+                    if (IS_SQUARE_ATTACKED(!turn, occ_after, king_sq)) {
+                    // illegal EP, skip it
+                    continue;
+                    }
+                }
+                // ==========================================================================================
+
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Empty, move_flags);
+                move_count[depth]++;
             }
         }
     }
@@ -1218,14 +1327,14 @@ void inline generate_capture_pawn_moves_in_check()
                     // lets figure out what piece this move is capturing (using our mailbox representation)
                     Piece_Type captured = mailbox[!turn][move_idx];
 
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Queen, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Rook, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Bishop, 0u);
-                    move_count++;
-                    valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Knight, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Queen, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Rook, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Bishop, 0u);
+                    move_count[depth]++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Knight, 0u);
+                    move_count[depth]++;
                 }
             }
             // piece is not pinned so move is valid
@@ -1233,20 +1342,20 @@ void inline generate_capture_pawn_moves_in_check()
             {
                 // lets figure out what piece this move is capturing
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Queen, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Rook, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Bishop, 0u);
-                move_count++;
-                valid_moves[move_count] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Knight, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Queen, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Rook, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Bishop, 0u);
+                move_count[depth]++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(ally_pwn_sq, move_idx, Pawn, captured, Knight, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_king_moves_single_attacker()
+void inline generate_king_moves_single_attacker(int depth)
 {
     Bitboard opp_king_occ = piece_occ_bb[!turn][King];
     Bitboard opp_occ = player_occ_bb[!turn];
@@ -1281,8 +1390,8 @@ void inline generate_king_moves_single_attacker()
 
         // lets figure out what piece this move is capturing
         Piece_Type captured = mailbox[!turn][move_idx];
-        valid_moves[move_count] = Encoder::construct_move(king_sq, move_idx, King, captured, Empty, 0u);
-        move_count++;
+        valid_moves[depth][move_count[depth]] = Encoder::construct_move(king_sq, move_idx, King, captured, Empty, 0u);
+        move_count[depth]++;
     }
 
     // non capture moves
@@ -1309,12 +1418,12 @@ void inline generate_king_moves_single_attacker()
         if(GET_KING_ATTACK(move_idx) & opp_king_occ)
             continue;
 
-        valid_moves[move_count] = Encoder::construct_move(king_sq, move_idx, King, Empty, Empty, 0u);
-        move_count++;
+        valid_moves[depth][move_count[depth]] = Encoder::construct_move(king_sq, move_idx, King, Empty, Empty, 0u);
+        move_count[depth]++;
     }
 }
 
-void inline generate_knight_moves_in_check()
+void inline generate_knight_moves_in_check(int depth)
 {
     Bitboard ally_knights_occ = piece_occ_bb[turn][Knight];
     Bitboard opp_occ = player_occ_bb[!turn];
@@ -1355,8 +1464,8 @@ void inline generate_knight_moves_in_check()
             {
                 // lets figure out what piece this move is capturing
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(this_knight_sq, move_idx, Knight, captured, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_knight_sq, move_idx, Knight, captured, Empty, 0u);
+                move_count[depth]++;
             }
         }
 
@@ -1374,14 +1483,14 @@ void inline generate_knight_moves_in_check()
             // piece is not pinned so move is valid
             else
             {
-                valid_moves[move_count] = Encoder::construct_move(this_knight_sq, move_idx, Knight, Empty, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_knight_sq, move_idx, Knight, Empty, Empty, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_bishop_moves_in_check()
+void inline generate_bishop_moves_in_check(int depth)
 {
     Bitboard ally_bishops_occ = piece_occ_bb[turn][Bishop];
     Bitboard opp_occ = player_occ_bb[!turn];
@@ -1422,8 +1531,8 @@ void inline generate_bishop_moves_in_check()
                 {
                     // lets figure out what piece this move is capturing (using our mailbox representation)
                     Piece_Type captured = mailbox[!turn][move_idx];
-                    valid_moves[move_count] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             // piece is not pinned so move is valid
@@ -1431,8 +1540,8 @@ void inline generate_bishop_moves_in_check()
             {
                 // lets figure out what piece this move is capturing
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u);
+                move_count[depth]++;
             }
         }
         // non capture moves
@@ -1448,20 +1557,20 @@ void inline generate_bishop_moves_in_check()
             {
                 if(pin_ray_mask[this_bishop_sq] & move_bb)
                 {
-                    valid_moves[move_count] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, Empty, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, Empty, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             else
             {
-                valid_moves[move_count] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, Empty, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, Empty, Empty, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_rook_moves_in_check()
+void inline generate_rook_moves_in_check(int depth)
 {
     Bitboard ally_rooks_occ    = piece_occ_bb[turn][Rook];
     Bitboard opp_occ           = player_occ_bb[!turn];
@@ -1493,15 +1602,15 @@ void inline generate_rook_moves_in_check()
                 if (pin_ray_mask[this_rook_sq] & move_bb)
                 {
                     Piece_Type captured = mailbox[!turn][move_idx];
-                    valid_moves[move_count] = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             else
             {
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u);
+                move_count[depth]++;
             }
         }
 
@@ -1518,20 +1627,20 @@ void inline generate_rook_moves_in_check()
             {
                 if (pin_ray_mask[this_rook_sq] & move_bb)
                 {
-                    valid_moves[move_count] = Encoder::construct_move(this_rook_sq, move_idx, Rook, Empty, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_rook_sq, move_idx, Rook, Empty, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             else
             {
-                valid_moves[move_count] = Encoder::construct_move(this_rook_sq, move_idx, Rook, Empty, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_rook_sq, move_idx, Rook, Empty, Empty, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_queen_moves_in_check()
+void inline generate_queen_moves_in_check(int depth)
 {
     Bitboard ally_queens_occ    = piece_occ_bb[turn][Queen];
     Bitboard opp_occ            = player_occ_bb[!turn];
@@ -1563,15 +1672,15 @@ void inline generate_queen_moves_in_check()
                 if (pin_ray_mask[this_queen_sq] & move_bb)
                 {
                     Piece_Type captured = mailbox[!turn][move_idx];
-                    valid_moves[move_count] = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             else
             {
                 Piece_Type captured = mailbox[!turn][move_idx];
-                valid_moves[move_count] = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u);
+                move_count[depth]++;
             }
         }
 
@@ -1588,23 +1697,23 @@ void inline generate_queen_moves_in_check()
             {
                 if (pin_ray_mask[this_queen_sq] & move_bb)
                 {
-                    valid_moves[move_count] = Encoder::construct_move(this_queen_sq, move_idx, Queen, Empty, Empty, 0u);
-                    move_count++;
+                    valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_queen_sq, move_idx, Queen, Empty, Empty, 0u);
+                    move_count[depth]++;
                 }
             }
             else
             {
-                valid_moves[move_count] = Encoder::construct_move(this_queen_sq, move_idx, Queen, Empty, Empty, 0u);
-                move_count++;
+                valid_moves[depth][move_count[depth]] = Encoder::construct_move(this_queen_sq, move_idx, Queen, Empty, Empty, 0u);
+                move_count[depth]++;
             }
         }
     }
 }
 
-void inline generate_moves()
+void inline generate_moves(int depth)
 {
     // zero the move count
-    move_count = 0;
+    move_count[depth] = 0;
 
     //
     generate_check_mask();
@@ -1612,7 +1721,7 @@ void inline generate_moves()
     // unblckable check
     if(num_attackers > 1)
     {
-        generate_king_moves();
+        generate_king_moves(depth);
 
         // if move count is zero here this is check mate
     }
@@ -1620,13 +1729,13 @@ void inline generate_moves()
     else if(num_attackers == 1)
     {
         generate_pin_mask();
-        generate_king_moves_single_attacker();
-        generate_non_capture_pawn_moves_in_check();
-        generate_capture_pawn_moves_in_check();
-        generate_knight_moves_in_check();
-        generate_bishop_moves_in_check();
-        generate_rook_moves_in_check();
-        generate_queen_moves_in_check();
+        generate_king_moves_single_attacker(depth);
+        generate_non_capture_pawn_moves_in_check(depth);
+        generate_capture_pawn_moves_in_check(depth);
+        generate_knight_moves_in_check(depth);
+        generate_bishop_moves_in_check(depth);
+        generate_rook_moves_in_check(depth);
+        generate_queen_moves_in_check(depth);
 
         // if move count is zero here this is check mate
     }
@@ -1634,31 +1743,502 @@ void inline generate_moves()
     else
     {
         generate_pin_mask();
-        generate_non_capture_pawn_moves();
-        generate_capture_pawn_moves();
-        generate_castle_moves();
-        generate_king_moves();
-        generate_knight_moves();
-        generate_bishop_moves();
-        generate_rook_moves();
-        generate_queen_moves();
+        generate_non_capture_pawn_moves(depth);
+        generate_capture_pawn_moves(depth);
+        generate_castle_moves(depth);
+        generate_king_moves(depth);
+        generate_knight_moves(depth);
+        generate_bishop_moves(depth);
+        generate_rook_moves(depth);
+        generate_queen_moves(depth);
 
         // if move count is zero here this is stalemate
     }
 }
 
-void inline do_move(Move move)
+UndoPacked inline do_move(Move move)
 {
+    // saves castling rihgts and en_passant for returning for the undo move
+    UndoPacked undo_info = Encoder::pack_undo(en_passant, castle_right);
+
+    // parsing move
     int from_sq = Encoder::move_get_from(move);
     int to_sq = Encoder::move_get_to(move);
+    Piece_Type moved_piece = Encoder::move_get_moved_piece(move);
+    Piece_Type captured = Encoder::move_get_captured_piece(move);
+    Piece_Type promotion = Encoder::move_get_promo_piece(move);
+    bool double_push_flag = Encoder::move_is_double_pawn(move);
+    bool passant_flag = Encoder::move_is_en_passant(move);
+    bool kc_castle_flag = Encoder::move_is_castle_kingside(move);
+    bool qc_castle_flag = Encoder::move_is_castle_queenside(move);
+    bool opp = !turn;
+    int push_offset = (turn == white) ? -8 : 8;
 
+    // reset enpassant privileges
+    en_passant = no_sqr;
 
+    if(moved_piece == Pawn)
+    {
+        // if move is a capture
+        if(captured != Empty)
+        {
+            // if move is an en_passant capture we must handle the peculiar bitboard_occupancy update
+            if(passant_flag)
+            {
+                // we must update the occupancy bitboards for both sides
+                // here we flip the from square bit since after the move this square ends up empty
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
 
+                // we know "to_sq" is empty in en_passant moves so we just flip it which will
+                // basically place the pawn now in this position
+                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+
+                // now we remove the enemy pawn from its square
+                // Note for en_passant captrue this is one square "back" than the "to_sq" index
+                // since en_passant captures in the back of the enemy pawn if that makes sense
+                int en_passant_sq = to_sq + (-push_offset);
+                FLIP_BIT(piece_occ_bb[opp][Pawn], en_passant_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = Empty;
+                mailbox[turn][to_sq] = moved_piece;
+
+                mailbox[opp][en_passant_sq] = Empty;
+
+                // reset en_passant value to no_sqr
+                // en_passant = no_sqr; redundant i did it on top
+            }
+            // else if this is a promotion capture
+            else if(promotion != Empty)
+            {
+                // initial square erasing
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+
+                // set the corresponding promoted piece bit in its corresponding place in the array
+                FLIP_BIT(piece_occ_bb[turn][promotion], to_sq);
+
+                // erase the enemy piece
+                FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = Empty;
+                mailbox[turn][to_sq] = promotion;
+
+                mailbox[opp][to_sq] = Empty;
+            }
+            // else this is a regular capture
+            else
+            {
+                // initial square erasing
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+
+                // set the corresponding piece bit in its corresponding place in the array
+                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+
+                // erase the enemy piece
+                FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = Empty;
+                mailbox[turn][to_sq] = moved_piece;
+
+                mailbox[opp][to_sq] = Empty;
+
+            }
+        }
+        // non capturing moves
+        else
+        {
+            // double push? then we must set en_passant for next turn which is the square "before" to_sq
+            if(double_push_flag)
+            {
+                // initial square erasing
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+
+                // set the corresponding piece bitboard
+                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = Empty;
+                mailbox[turn][to_sq] = moved_piece;
+
+                // set en_passant for next move
+                en_passant = to_sq + (-push_offset);
+            }
+            // promotion single push
+            else if(promotion != Empty)
+            {
+                // initial square erasing
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+
+                // set the corresponding piece bitboard
+                FLIP_BIT(piece_occ_bb[turn][promotion], to_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = Empty;
+                mailbox[turn][to_sq] = promotion;
+            }
+            //else regular push
+            else
+            {
+                // initial square erasing
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+
+                // set the corresponding piece bitboard
+                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = Empty;
+                mailbox[turn][to_sq] = moved_piece;
+            }
+        }
+    }
+    else if(moved_piece == King)
+    {
+        // update king position
+        king_position[turn] = to_sq;
+
+        // if move is capture
+        if(captured != Empty)
+        {
+            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+            FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+
+            mailbox[turn][from_sq] = Empty;
+            mailbox[turn][to_sq] = moved_piece;
+            mailbox[opp][to_sq] = Empty;
+        }
+        // castling moves (king side)
+        else if(kc_castle_flag)
+        {
+            // king
+            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+
+            mailbox[turn][from_sq] = Empty;
+            mailbox[turn][to_sq] = moved_piece;
+
+            // rook
+            int rook_from_sq = (turn == white) ? h1 : h8;
+            int rook_to_sq = (turn == white) ? f1 : f8;
+            FLIP_BIT(piece_occ_bb[turn][Rook], rook_from_sq);
+            FLIP_BIT(piece_occ_bb[turn][Rook], rook_to_sq);
+
+            mailbox[turn][rook_from_sq] = Empty;
+            mailbox[turn][rook_to_sq] = Rook;
+        }
+        // castling moves (queen side)
+        else if(qc_castle_flag)
+        {
+            // king
+            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+
+            mailbox[turn][from_sq] = Empty;
+            mailbox[turn][to_sq] = moved_piece;
+
+            // rook
+            int rook_from_sq = (turn == white) ? a1 : a8;
+            int rook_to_sq = (turn == white) ? d1 : d8;
+            FLIP_BIT(piece_occ_bb[turn][Rook], rook_from_sq);
+            FLIP_BIT(piece_occ_bb[turn][Rook], rook_to_sq);
+
+            mailbox[turn][rook_from_sq] = Empty;
+            mailbox[turn][rook_to_sq] = Rook;
+        }
+        // non captures moves
+        else
+        {
+            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+
+            mailbox[turn][from_sq] = Empty;
+            mailbox[turn][to_sq] = moved_piece;
+        }
+    }
+    // rook, queen, bishop, or knight all the same thing
+    // Note castling is considered a king move so there we take care of castling
+    else
+    {
+        // if move is capture
+        if(captured != Empty)
+        {
+            FLIP_BIT(piece_occ_bb[turn][moved_piece], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][moved_piece], to_sq);
+            FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+
+            mailbox[turn][from_sq] = Empty;
+            mailbox[turn][to_sq] = moved_piece;
+            mailbox[opp][to_sq] = Empty;
+        }
+        // non captures moves
+        else
+        {
+            FLIP_BIT(piece_occ_bb[turn][moved_piece], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][moved_piece], to_sq);
+
+            mailbox[turn][from_sq] = Empty;
+            mailbox[turn][to_sq] = moved_piece;
+        }
+    }
+
+    // Next Move Occupancy, turn, castle rights updates =====================================================================================================================
+    // reset the player occupancy bitboard (not the pieces but the "all pieces" per player and "all board" bitboard)
+    // std::memset(player_occ_bb, 0, sizeof(player_occ_bb));
+    std::memset(player_occ_bb, 0, 24);  // avoid recomptuing size by giving it to the fucntion diretcly
+
+    // rebuild player_occ_bb from the new pieces_occupancy bitboards
+    // 0-6 is pawn trhough king
+    for(int i=0; i<6; i++)
+    {
+        player_occ_bb[white] |= piece_occ_bb[white][i];
+        player_occ_bb[black] |= piece_occ_bb[black][i];
+    }
+    // create the all bitboard using the combination of white and black occupancy bitboards
+    player_occ_bb[all_color] = ( player_occ_bb[white] | player_occ_bb[black] );
+
+    // castling rights update
+    castle_right &= Tables::castling_table[from_sq];
+    castle_right &= Tables::castling_table[to_sq];
+
+    turn = opp;
+
+    return undo_info;
 }
 
-void inline undo_move()
+void inline undo_move(Move move, UndoPacked undo_info)
 {
+    // bring the turn back to the other player
+    turn = !turn;
 
+    // parsing move
+    int from_sq = Encoder::move_get_from(move);
+    int to_sq = Encoder::move_get_to(move);
+    Piece_Type moved_piece = Encoder::move_get_moved_piece(move);
+    Piece_Type captured = Encoder::move_get_captured_piece(move);
+    Piece_Type promotion = Encoder::move_get_promo_piece(move);
+    bool double_push_flag = Encoder::move_is_double_pawn(move);
+    bool passant_flag = Encoder::move_is_en_passant(move);
+    bool kc_castle_flag = Encoder::move_is_castle_kingside(move);
+    bool qc_castle_flag = Encoder::move_is_castle_queenside(move);
+    bool opp = !turn;
+    int push_offset = (turn == white) ? -8 : 8;
+
+    if(moved_piece == Pawn)
+    {
+        // if move is a capture
+        if(captured != Empty)
+        {
+            // if move is an en_passant capture we must handle the peculiar bitboard_occupancy update
+            if(passant_flag)
+            {
+                // al backwards here
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+
+                int en_passant_sq = to_sq + (-push_offset);
+                FLIP_BIT(piece_occ_bb[opp][Pawn], en_passant_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = moved_piece;
+                mailbox[turn][to_sq] = Empty;
+
+                mailbox[opp][en_passant_sq] = Pawn;
+            }
+            // else if this is a promotion capture
+            else if(promotion != Empty)
+            {
+                //
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+
+                // set the corresponding promoted piece bit in its corresponding place in the array
+                FLIP_BIT(piece_occ_bb[turn][promotion], to_sq);
+
+                // bring back enemy piece
+                FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = Pawn;
+                mailbox[turn][to_sq] = Empty;
+
+                mailbox[opp][to_sq] = captured;
+            }
+            // else this is a regular capture
+            else
+            {
+                //
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+
+                // set the corresponding piece bit in its corresponding place in the array
+                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+
+                // bring back enemy piece
+                FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = moved_piece;
+                mailbox[turn][to_sq] = Empty;
+
+                mailbox[opp][to_sq] = captured;
+            }
+        }
+        // non capturing moves
+        else
+        {
+            // double push? then we must set en_passant for next turn which is the square "before" to_sq
+            if(double_push_flag)
+            {
+                // initial square bring back piece
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+
+                // empty to square
+                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = moved_piece;
+                mailbox[turn][to_sq] = Empty;
+            }
+            // promotion single push
+            else if(promotion != Empty)
+            {
+                // initial square erasing
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+
+                // set the corresponding piece bitboard
+                FLIP_BIT(piece_occ_bb[turn][promotion], to_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = Pawn;
+                mailbox[turn][to_sq] = Empty;
+            }
+            //else regular push
+            else
+            {
+                // initial square erasing
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+
+                // set the corresponding piece bitboard
+                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+
+                // update mailbox
+                mailbox[turn][from_sq] = moved_piece;
+                mailbox[turn][to_sq] = Empty;
+            }
+        }
+    }
+    else if(moved_piece == King)
+    {
+        // update king position (backwards)
+        king_position[turn] = from_sq;
+
+        // if move is capture
+        if(captured != Empty)
+        {
+            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+            FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+
+            mailbox[turn][from_sq] = moved_piece;
+            mailbox[turn][to_sq] = Empty;
+            mailbox[opp][to_sq] = captured;
+        }
+        // castling moves (king side)
+        else if(kc_castle_flag)
+        {
+            // king
+            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+
+            mailbox[turn][from_sq] = moved_piece;
+            mailbox[turn][to_sq] = Empty;
+
+            // rook
+            int rook_from_sq = (turn == white) ? h1 : h8;
+            int rook_to_sq = (turn == white) ? f1 : f8;
+            FLIP_BIT(piece_occ_bb[turn][Rook], rook_from_sq);
+            FLIP_BIT(piece_occ_bb[turn][Rook], rook_to_sq);
+
+            mailbox[turn][rook_from_sq] = Rook;
+            mailbox[turn][rook_to_sq] = Empty;
+        }
+        // castling moves (queen side)
+        else if(qc_castle_flag)
+        {
+            // king
+            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+
+            mailbox[turn][from_sq] = Empty;
+            mailbox[turn][to_sq] = moved_piece;
+
+            // rook
+            int rook_from_sq = (turn == white) ? a1 : a8;
+            int rook_to_sq = (turn == white) ? d1 : d8;
+            FLIP_BIT(piece_occ_bb[turn][Rook], rook_from_sq);
+            FLIP_BIT(piece_occ_bb[turn][Rook], rook_to_sq);
+
+            mailbox[turn][rook_from_sq] = Rook;
+            mailbox[turn][rook_to_sq] = Empty;
+        }
+        // non captures moves
+        else
+        {
+            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+
+            mailbox[turn][from_sq] = moved_piece;
+            mailbox[turn][to_sq] = Empty;
+        }
+    }
+    // rook, queen, bishop, or knight all the same thing
+    // Note castling is considered a king move so there we take care of castling
+    else
+    {
+        // if move is capture
+        if(captured != Empty)
+        {
+            FLIP_BIT(piece_occ_bb[turn][moved_piece], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][moved_piece], to_sq);
+            FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+
+            mailbox[turn][from_sq] = moved_piece;
+            mailbox[turn][to_sq] = Empty;
+            mailbox[opp][to_sq] = captured;
+        }
+        // non captures moves
+        else
+        {
+            FLIP_BIT(piece_occ_bb[turn][moved_piece], from_sq);
+            FLIP_BIT(piece_occ_bb[turn][moved_piece], to_sq);
+
+            mailbox[turn][from_sq] = moved_piece;
+            mailbox[turn][to_sq] = Empty;
+        }
+    }
+
+    // Next Move Occupancy, turn, castle rights updates =====================================================================================================================
+    // reset the player occupancy bitboard (not the pieces but the "all pieces" per player and "all board" bitboard)
+    // std::memset(player_occ_bb, 0, sizeof(player_occ_bb));
+    std::memset(player_occ_bb, 0, 24);  // avoid recomptuing size by giving it to the fucntion diretcly
+
+    // rebuild player_occ_bb from the new pieces_occupancy bitboards
+    // 0-6 is pawn trhough king
+    for(int i=0; i<6; i++)
+    {
+        player_occ_bb[white] |= piece_occ_bb[white][i];
+        player_occ_bb[black] |= piece_occ_bb[black][i];
+    }
+    // create the all bitboard using the combination of white and black occupancy bitboards
+    player_occ_bb[all_color] = ( player_occ_bb[white] | player_occ_bb[black] );
+
+    // castling rights update
+    // need to preserve the castle right state to update here
+    en_passant = Encoder::get_en_passant(undo_info);
+
+    // en_passant update
+    // need to preserve the en_passant state to update here
+    castle_right = Encoder::get_castle_right(undo_info);
 }
 
 }   // end Move_Gen namepsace
