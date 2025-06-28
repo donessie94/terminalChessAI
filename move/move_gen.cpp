@@ -10,7 +10,7 @@ Bitboard discovered_mask;
 Bitboard discovered_ray_mask[64];
 Bitboard check_mask;
 int num_attackers;
-int move_count[MAX_DEPTH];
+Move_List move_list[MAX_DEPTH];
 
 // not yet reinitialized per move
 Piece_Type mailbox[2][64];
@@ -18,7 +18,6 @@ int king_position[2];
 int castle_right;
 int en_passant;
 bool turn;
-Move valid_moves[MAX_DEPTH][MAX_MOVES];
 Bitboard piece_occ_bb[2][6];
 Bitboard player_occ_bb[3];
 // ============================================================================================================================================================

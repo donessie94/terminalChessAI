@@ -26,8 +26,9 @@ static inline void print_move_info(Move m) {
     Piece_Type cp  = Encoder::move_get_captured_piece(m);
     Piece_Type pp  = Encoder::move_get_promo_piece(m);
     uint32_t flags = Encoder::move_get_flags(m);
+    uint8_t score  = Encoder::move_get_score(m);
 
-    // decode file/rank for a8..h1 mapping:
+    // algebraic from/to
     char from_file = 'a' + (from & 7);
     char from_rank = '8' - (from >> 3);
     char to_file   = 'a' + (to   & 7);
@@ -40,25 +41,21 @@ static inline void print_move_info(Move m) {
 
     printf("Captured:  %s\n", piece_names[(int)cp]);
     printf("Promoted:  %s\n", piece_names[(int)pp]);
+    printf("Score:     %u\n", score);
 
     printf("Flags:     ");
-    int any = 0;
+    bool any = false;
 
     #define FLAG_PRINT(f, name) \
       do { if (flags & (f)) { \
             if (any) printf(" | "); \
             printf("%s", name); \
-            any = 1; \
+            any = true; \
           } } while (0)
 
-    FLAG_PRINT(Encoder::FLAG_CAPTURE,          "Capture");
-    FLAG_PRINT(Encoder::FLAG_EN_PASSANT,       "EnPassant");
     FLAG_PRINT(Encoder::FLAG_DOUBLE_PAWN,      "DoublePawn");
     FLAG_PRINT(Encoder::FLAG_CASTLE_KINGSIDE,  "CastleK");
     FLAG_PRINT(Encoder::FLAG_CASTLE_QUEENSIDE, "CastleQ");
-    FLAG_PRINT(Encoder::FLAG_PROMOTION,        "Promotion");
-    FLAG_PRINT(Encoder::FLAG_CHECK,            "Check");    
-    FLAG_PRINT(Encoder::FLAG_DISCOVERED_CHECK, "DiscCheck");
 
     if (!any) {
         printf("None");

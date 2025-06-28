@@ -100,7 +100,7 @@ inline void on_position(const std::string& args)
             }
 
             // lets traverse the move to look for the move is required from us to make
-            for(auto &m: Move_Gen::valid_moves[0])
+            for(auto &m: Move_Gen::move_list[0].moves)
             {
                 // parse move
                 int valid_source = Encoder::move_get_from(m);

@@ -39,13 +39,13 @@ static inline __attribute__((always_inline)) int static_evaluation(bool ab)
     // check mate
     if(num_attackers > 0)
     {
-        if(move_count[test_depth] == 0)
+        if(move_list[test_depth].count == 0)
             return infinity[ab];
     }
     // stealmate
     else
     {
-        if(move_count[test_depth] == 0)
+        if(move_list[test_depth].count == 0)
             return 0;
     }
     // ==========================================================================================
@@ -91,13 +91,13 @@ static inline __attribute__((always_inline)) void perft_test(int depth)
 
     Move_Gen::generate_moves(depth);
 
-    for(int mv=0; mv<Move_Gen::move_count[depth]; mv++)
+    for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
     {
-        UndoPacked undo_info = Move_Gen::do_move(Move_Gen::valid_moves[depth][mv]);
+        UndoPacked undo_info = Move_Gen::do_move(Move_Gen::move_list[depth].moves[mv]);
 
         perft_test(depth+1);
 
-        Move_Gen::undo_move(Move_Gen::valid_moves[depth][mv], undo_info);
+        Move_Gen::undo_move(Move_Gen::move_list[depth].moves[mv], undo_info);
     }
 }
 
@@ -122,13 +122,13 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
     // check mate
     if(Move_Gen::num_attackers > 0)
     {
-        if(Move_Gen::move_count[depth] == 0)
+        if(Move_Gen::move_list[depth].count == 0)
             return std::numeric_limits<int>::lowest();
     }
     // stealmate
     else
     {
-        if(Move_Gen::move_count[depth] == 0)
+        if(Move_Gen::move_list[depth].count == 0)
             return 0;
     }
     // ==========================================================================================
@@ -138,9 +138,9 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
     int current_node_best = alpha; // start at the lower bound instead (same thing)
 
     // iterate all moves
-    for(int mv=0; mv<Move_Gen::move_count[depth]; mv++)
+    for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
     {
-        Move move = Move_Gen::valid_moves[depth][mv];
+        Move move = Move_Gen::move_list[depth].moves[mv];
         UndoPacked undo_info = Move_Gen::do_move(move);
 
         int next_node_evaluation = alpha_beta_min(alpha, beta, depth+1);
@@ -183,20 +183,20 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
 
     if(Move_Gen::num_attackers > 0)
     {
-        if(Move_Gen::move_count[depth] == 0)
+        if(Move_Gen::move_list[depth].count == 0)
             return std::numeric_limits<int>::max();
     }
     else
     {
-        if(Move_Gen::move_count[depth] == 0)
+        if(Move_Gen::move_list[depth].count == 0)
             return 0;
     }
 
     //int current_node_best = infinity[!Move_Gen::turn];
     int current_node_best = beta;
-    for(int mv=0; mv<Move_Gen::move_count[depth]; mv++)
+    for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
     {
-        Move move = Move_Gen::valid_moves[depth][mv];
+        Move move = Move_Gen::move_list[depth].moves[mv];
         UndoPacked undo_info = Move_Gen::do_move(move);
         int next_node_evaluation = alpha_beta_max(alpha, beta, depth+1);
         Move_Gen::undo_move(move, undo_info);
@@ -224,7 +224,7 @@ Move find_best_move(int max_depth)
     int current_node_best = alpha;                              // track the best score
     search_depth = max_depth;
     Move_Gen::generate_moves(0);
-    Move best_move = Move_Gen::valid_moves[0][0];
+    Move best_move = Move_Gen::move_list[0].moves[0];
 
     //printf("Number of moves available: %d\n", Move_Gen::move_count[0]);
 
@@ -232,9 +232,9 @@ Move find_best_move(int max_depth)
     //
     // so by doing this we know the move and expand the next nodes and ensure they can prune right away
     // by updating alpha here manually on top node
-    for (int i = 0; i < Move_Gen::move_count[0]; ++i)
+    for (int i = 0; i < Move_Gen::move_list[0].count; ++i)
     {
-        Move m = Move_Gen::valid_moves[0][i];
+        Move m = Move_Gen::move_list[0].moves[i];
         auto undo_info = Move_Gen::do_move(m);
 
         // call MIN on each root‐move

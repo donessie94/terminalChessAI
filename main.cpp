@@ -7,12 +7,12 @@ using namespace RedStone;
 
 int main()
 {
-    using namespace std::chrono;
+    //using namespace std::chrono;
 
-    // Tables::initialize_precomputed_tables();
+    //Tables::initialize_precomputed_tables();
 
     // // void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant, int king_pos[])
-    // Utils::parse_fen_str(UCI::start_position, Move_Gen::player_occ_bb, Move_Gen::piece_occ_bb, Move_Gen::turn, Move_Gen::castle_right, Move_Gen::en_passant, Move_Gen::king_position);
+    //Utils::parse_fen_str(UCI::start_position, Move_Gen::player_occ_bb, Move_Gen::piece_occ_bb, Move_Gen::turn, Move_Gen::castle_right, Move_Gen::en_passant, Move_Gen::king_position);
 
     // // void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant)
     // Utils::print_mini_board(Move_Gen::player_occ_bb, Move_Gen::piece_occ_bb, Move_Gen::turn, Move_Gen::castle_right, Move_Gen::en_passant);
