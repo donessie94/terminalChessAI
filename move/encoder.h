@@ -60,7 +60,7 @@ static constexpr uint16_t CR_MASK    = 0x0780;     // 0b0000 0111 1000 0000
 static constexpr int      CR_SHIFT   = 7;
 
 // Pack en_passant (0–64) and castle_right (bitmask 0–15) into one word
-static inline UndoPacked pack_undo(int en_passant, int castle_right) {
+static inline __attribute__((always_inline)) UndoPacked pack_undo(int en_passant, int castle_right) {
     return static_cast<UndoPacked>(
          (en_passant     & EP_MASK)
        | ((castle_right & 0xF) << CR_SHIFT)
@@ -68,18 +68,18 @@ static inline UndoPacked pack_undo(int en_passant, int castle_right) {
 }
 
 // Extractors
-static inline int get_en_passant(UndoPacked u) {
+static inline __attribute__((always_inline)) int get_en_passant(UndoPacked u) {
     return  u & EP_MASK;
 }
-static inline int get_castle_right(UndoPacked u) {
+static inline __attribute__((always_inline)) int get_castle_right(UndoPacked u) {
     return (u & CR_MASK) >> CR_SHIFT;
 }
 
 // Mutators
-static inline void set_en_passant(UndoPacked &u, int en_passant) {
+static inline __attribute__((always_inline)) void set_en_passant(UndoPacked &u, int en_passant) {
     u = static_cast<UndoPacked>((u & ~EP_MASK) | (en_passant & EP_MASK));
 }
-static inline void set_castle_right(UndoPacked &u, int castle_right) {
+static inline __attribute__((always_inline)) void set_castle_right(UndoPacked &u, int castle_right) {
     u = static_cast<UndoPacked>((u & ~CR_MASK)
                               | ((castle_right & 0xF) << CR_SHIFT));
 }
@@ -153,7 +153,7 @@ constexpr uint32_t FLAG_CHECK           = 1u << 6;  // optional: move gives chec
 constexpr uint32_t FLAG_DISCOVERED_CHECK= 1u << 7;  // optional: move uncovers discovered check
 
 // Helper to pack a move:
-inline Move construct_move( int from_sq,
+static inline __attribute__((always_inline)) Move construct_move( int from_sq,
                             int to_sq,
                             Piece_Type moved_piece,
                             Piece_Type captured_piece,  // use Empty if no capture
@@ -172,22 +172,22 @@ inline Move construct_move( int from_sq,
 }
 
 // Extractors:
-inline int move_get_to(Move m) {
+static inline __attribute__((always_inline)) int move_get_to(Move m) {
     return int((m & TO_MASK) >> TO_SHIFT);
 }
-inline int move_get_from(Move m) {
+static inline __attribute__((always_inline)) int move_get_from(Move m) {
     return int((m & FROM_MASK) >> FROM_SHIFT);
 }
-inline Piece_Type move_get_moved_piece(Move m) {
+static inline __attribute__((always_inline)) Piece_Type move_get_moved_piece(Move m) {
     return Piece_Type((m & MOVED_MASK) >> MOVED_SHIFT);
 }
-inline Piece_Type move_get_captured_piece(Move m) {
+static inline __attribute__((always_inline)) Piece_Type move_get_captured_piece(Move m) {
     return Piece_Type((m & CAPT_MASK) >> CAPT_SHIFT);
 }
-inline Piece_Type move_get_promo_piece(Move m) {
+static inline __attribute__((always_inline)) Piece_Type move_get_promo_piece(Move m) {
     return Piece_Type((m & PROMO_MASK) >> PROMO_SHIFT);
 }
-inline uint32_t move_get_flags(Move m) {
+static inline __attribute__((always_inline)) uint32_t move_get_flags(Move m) {
     return uint32_t((m & FLAGS_MASK) >> FLAGS_SHIFT);
 }
 
@@ -196,16 +196,16 @@ inline bool move_is_capture(Move m) {
     // or test captured_piece != Empty
     return (move_get_flags(m) & FLAG_CAPTURE) != 0;
 }
-inline bool move_is_en_passant(Move m) {
+static inline __attribute__((always_inline)) bool move_is_en_passant(Move m) {
     return (move_get_flags(m) & FLAG_EN_PASSANT) != 0;
 }
-inline bool move_is_double_pawn(Move m) {
+static inline __attribute__((always_inline)) bool move_is_double_pawn(Move m) {
     return (move_get_flags(m) & FLAG_DOUBLE_PAWN) != 0;
 }
-inline bool move_is_castle_kingside(Move m) {
+static inline __attribute__((always_inline)) bool move_is_castle_kingside(Move m) {
     return (move_get_flags(m) & FLAG_CASTLE_KINGSIDE) != 0;
 }
-inline bool move_is_castle_queenside(Move m) {
+static inline __attribute__((always_inline)) bool move_is_castle_queenside(Move m) {
     return (move_get_flags(m) & FLAG_CASTLE_QUEENSIDE) != 0;
 }
 inline bool move_is_promotion(Move m) {
@@ -216,6 +216,28 @@ inline bool move_gives_check(Move m) {
 }
 inline bool move_discovers_check(Move m) {
     return (move_get_flags(m) & FLAG_DISCOVERED_CHECK) != 0;
+}
+
+/// Convert a coordinate string ("a8".."h1") to a square index (0..63), or no_sqr if invalid.
+static inline int coord_to_square(const std::string &coord)
+{
+    if (coord.size() < 2)
+        return no_sqr;
+    char file = coord[0];
+    char rank = coord[1];
+    // file in 'a'..'h', rank in '1'..'8'
+    if (file < 'a' || file > 'h' || rank < '1' || rank > '8')
+        return no_sqr;
+    int f = file - 'a';         // 0..7
+    int r = '8' - rank;         // '8'->0, '1'->7
+    return r * 8 + f;           // row-major 0=a8,1=b8,..7=h8, 8=a7,..
+}
+
+// Overload for C-string (e.g. square_to_coord entries)
+static inline int coord_to_square(const char *coord)
+{
+    // delegate to std::string version
+    return coord_to_square(std::string(coord));
 }
 
 }   // end Encoder namespace

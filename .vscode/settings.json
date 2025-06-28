@@ -45,6 +45,13 @@
         "algorithm": "cpp",
         "chrono": "cpp",
         "functional": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "compare": "cpp",
+        "concepts": "cpp",
+        "iterator": "cpp",
+        "memory_resource": "cpp",
+        "type_traits": "cpp",
+        "utility": "cpp",
+        "cinttypes": "cpp"
     }
 }

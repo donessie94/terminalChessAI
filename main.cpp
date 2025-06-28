@@ -1,25 +1,21 @@
 #include"utils/misc.h"
 #include"search/search.h"
 #include <chrono>
+#include"uci_protocol/uci.h"
 
 using namespace RedStone;
-
-// Define the FEN start string:
-const char start_position[] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-const char tricky_position[] = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
-const char test_position[] = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8";
 
 int main()
 {
     using namespace std::chrono;
 
-    Tables::initialize_precomputed_tables();
+    // Tables::initialize_precomputed_tables();
 
-    // void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant, int king_pos[])
-    Utils::parse_fen_str(tricky_position, Move_Gen::player_occ_bb, Move_Gen::piece_occ_bb, Move_Gen::turn, Move_Gen::castle_right, Move_Gen::en_passant, Move_Gen::king_position);
+    // // void parse_fen_str(const char fen[], bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant, int king_pos[])
+    // Utils::parse_fen_str(UCI::start_position, Move_Gen::player_occ_bb, Move_Gen::piece_occ_bb, Move_Gen::turn, Move_Gen::castle_right, Move_Gen::en_passant, Move_Gen::king_position);
 
-    // void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant)
-    Utils::print_mini_board(Move_Gen::player_occ_bb, Move_Gen::piece_occ_bb, Move_Gen::turn, Move_Gen::castle_right, Move_Gen::en_passant);
+    // // void print_mini_board(bitboard player_occ_bb[3], bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant)
+    // Utils::print_mini_board(Move_Gen::player_occ_bb, Move_Gen::piece_occ_bb, Move_Gen::turn, Move_Gen::castle_right, Move_Gen::en_passant);
 
     // int depth = 0;
 
@@ -70,15 +66,23 @@ int main()
     //printf("Size: %lu", sizeof(Move_Gen::player_occ_bb));
 
 
-    int depth = 0;
+    // int depth = 0;
 
-    auto t0 = steady_clock::now();
-    Search::perft_test(depth);
-    auto t1 = steady_clock::now();
-    auto dt = duration_cast<milliseconds>(t1 - t0).count();
+    // auto t0 = steady_clock::now();
+    // Search::perft_test(depth);
+    // auto t1 = steady_clock::now();
+    // auto dt = duration_cast<milliseconds>(t1 - t0).count();
 
-    printf("Search time: %lld ms\n", (long long)dt);
-    printf("Nodes Explored: %llu\n", Search::node_count);
+    // printf("Search time: %lld ms\n", (long long)dt);
+    // printf("Nodes Explored: %llu\n", Search::node_count);
+    // printf("Nodes per second: %llu", (Search::node_count / dt));
+
+    UCI::uci_loop();
+    // for(int m=0; m<Move_Gen::move_count[0]; m++)
+    // {
+    //     Utils::print_move_info(Move_Gen::valid_moves[0][m]);
+    // }
+
 
 
 
