@@ -3,7 +3,7 @@
 
 namespace RedStone{
 
-static constexpr int MAX_DEPTH = 6;
+static constexpr int MAX_DEPTH = 30;
 static constexpr int MAX_MOVES = 218;
 
 // Helpers Macros ===================================================================================================================================================
@@ -43,6 +43,8 @@ static constexpr int MAX_MOVES = 218;
     (flags_byte),                                                            \
     /* score */ 0u                                                           \
   )
+
+
 
 // IS A SQUARE ATTACKED? ===========================================================================================================================================
 
@@ -2269,6 +2271,8 @@ static inline __attribute__((always_inline)) UndoPacked do_move(Move move)
 
     turn = opp;
 
+    //
+
     return undo_info;
 }
 
@@ -2505,6 +2509,712 @@ static inline __attribute__((always_inline)) void undo_move(Move move, UndoPacke
     // need to preserve the en_passant state to update here
     castle_right = Encoder::get_castle_right(undo_info);
 }
+
+
+// ONLY CAPTURES/PROMOS/CHECK?===============================================================================================================================================
+
+static inline __attribute__((always_inline)) void generate_only_promo_pawn_moves(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+
+    Bitboard ally_pawn_occ = (turn == white) ? piece_occ_bb[white][Pawn] : piece_occ_bb[black][Pawn];
+    Bitboard ally_home_pawns = (turn == white) ? ( ally_pawn_occ & Tables::Rank2 ) : ( ally_pawn_occ & Tables::Rank7 );
+    Bitboard ally_to_promo_pawns = (turn == white) ? ( ally_pawn_occ & Tables::Rank7 ) : ( ally_pawn_occ & Tables::Rank2 );
+    Bitboard all_occ = player_occ_bb[all_color];
+    int push_offset = (turn == white) ? -8 : 8;
+
+    //
+    while (ally_to_promo_pawns)
+    {
+        int ally_pwn_sq = LS1B_IDX(ally_to_promo_pawns);
+        ally_to_promo_pawns &= ally_to_promo_pawns - 1;     // clear LS1B
+
+        // get the destination square index
+        int to_sq = ally_pwn_sq + push_offset;
+        // Note we can figure out the flag from the promo piece so we dont need the flag
+        //uint32_t move_flags = Encoder::FLAG_PROMOTION;    // not needed
+
+        Bitboard ally_pwn_occ_bb = (1ULL << ally_pwn_sq);
+
+        // lets create the push1 forward occupancy bitboard
+        Bitboard push1_occ = (turn == white) ? ( ally_pwn_occ_bb >> 8 ) : ( ally_pwn_occ_bb << 8 );
+
+        // if this is an empty square
+        if( (push1_occ & all_occ) == 0 )
+        {
+            // now we know the move (single push promo) is pseudo valid, now we check if it does not leave our king in check
+            // if this is non_zero it means this pawn was in the flaged pinned pieces squares
+            if(pin_mask & ally_pwn_occ_bb)
+            {
+                // only valid moves are along the same ray this piece was blocking the enemy attacker
+                // pin_ray_mask contains only such moves marked
+                // so if this is nonzero we save the move cuz its still blocking the check
+                if(pin_ray_mask[ally_pwn_sq] & ( 1ULL << to_sq ))
+                {
+                    // construct the move and save it
+                    buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u, 0u);
+                    buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u, 0u);
+                    buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u, 0u);
+                    buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u, 0u);
+                }
+                else
+                    continue;   //  if the move was not in the right direction to keep blocking the check we skip to next pawn (this pawn push leaves king in check)
+            }
+            // if square was not on pinned pieces then save the move
+            else
+            {
+                // construct the move and save it
+                buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u, 0u);
+                buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u, 0u);
+                buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u, 0u);
+                buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u, 0u);
+            }
+        }
+    }
+}
+
+static inline __attribute__((always_inline)) void generate_only_captures_king_moves(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+    Bitboard opp_king_occ = piece_occ_bb[!turn][King];
+    Bitboard opp_occ = player_occ_bb[!turn];
+    Bitboard empty_occ = ~player_occ_bb[all_color];
+    Bitboard all_occ = player_occ_bb[all_color];
+    int king_sq = king_position[turn];
+
+    // get the possible attack bitboard mask
+    Bitboard possible_moves = GET_KING_ATTACK(king_sq);
+
+    Bitboard capture_moves = possible_moves & opp_occ;
+
+    //
+    while (capture_moves)
+    {
+        int move_idx = LS1B_IDX(capture_moves);
+        capture_moves &= capture_moves - 1;
+
+        Bitboard occ_after = (all_occ ^ (1ULL<<king_sq)) | (1ULL<<move_idx);
+
+        // if enemy king is too close move is not valid
+        if(GET_KING_ATTACK(move_idx) & opp_king_occ)
+            continue;
+
+        // if king ends in check move is not valid
+        if(IS_SQUARE_ATTACKED(!turn, occ_after ,move_idx))
+            continue;
+
+        // lets figure out what piece this move is capturing
+        Piece_Type captured = mailbox[!turn][move_idx];
+        buf[cnt++] = Encoder::construct_move(king_sq, move_idx, King, captured, Empty, 0u, 0u);
+
+    }
+}
+
+static inline __attribute__((always_inline)) void generate_only_captures_knight_moves(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+    Bitboard ally_knights_occ = piece_occ_bb[turn][Knight];
+    Bitboard opp_occ = player_occ_bb[!turn];
+    Bitboard empty_occ = ~player_occ_bb[all_color];
+
+    while (ally_knights_occ)
+    {
+        int this_knight_sq = LS1B_IDX(ally_knights_occ);
+        ally_knights_occ &= ally_knights_occ - 1;     // clear LS1B
+
+        Bitboard this_knight_occ = 1ULL << this_knight_sq;
+
+        // get the possible attack bitboard mask
+        Bitboard possible_moves = GET_KNIGHT_ATTACK(this_knight_sq);
+
+        Bitboard capture_moves = possible_moves & opp_occ;
+
+        //
+        while (capture_moves)
+        {
+            int move_idx = LS1B_IDX(capture_moves);
+            capture_moves &= capture_moves - 1;
+
+            // we know the move captures an enemy piece so far (pseudo valid)
+            // so we have to make sure it does not leave our king in check
+            // knihgts cant possible land on the same rank or file or diagonal so if knight is pinned
+            // it stays there
+            // if(pin_mask & this_knight_occ)
+            //     continue;
+            // // piece is not pinned so move is valid
+            // else
+            // {
+            //     // lets figure out what piece this move is capturing
+            //     Piece_Type captured = mailbox[!turn][move_idx];
+            //     buf[cnt++] = Encoder::construct_move(this_knight_sq, move_idx, Knight, captured, Empty, 0u);
+
+            // }
+
+            // NOTE the trick we are using here to go branchless to avoid wasting CPU cycles if missprediciton of the branch(cuz CPU needs to flush the instructions if so)
+            // we use the comma operator for expressions in C/C++ --> (a, b) (this translates to evaluate 'a' and make its side effects then discard its value and
+            // the resultant expression is the value of 'b')
+            Piece_Type captured = mailbox[!turn][move_idx];
+            Move m = Encoder::construct_move(this_knight_sq, move_idx, Knight, captured, Empty, 0u, 0u);
+            cnt += ((pin_mask & this_knight_occ) == 0) & (buf[cnt] = m, 1);
+        }
+    }
+}
+
+static inline __attribute__((always_inline)) void generate_only_captures_bishop_moves(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+    Bitboard ally_bishops_occ = piece_occ_bb[turn][Bishop];
+    Bitboard opp_occ = player_occ_bb[!turn];
+    Bitboard empty_occ = ~player_occ_bb[all_color];
+    Bitboard all_occ = player_occ_bb[all_color];
+
+    while (ally_bishops_occ)
+    {
+        int this_bishop_sq = LS1B_IDX(ally_bishops_occ);
+        ally_bishops_occ &= ally_bishops_occ - 1;     // clear LS1B
+
+        Bitboard this_bishop_occ = 1ULL << this_bishop_sq;
+
+        // get the possible attack bitboard mask
+        Bitboard possible_moves = GET_BISHOP_ATTACK(all_occ, this_bishop_sq);
+
+        Bitboard capture_moves = possible_moves & opp_occ;
+
+        //
+        while (capture_moves)
+        {
+            int move_idx = LS1B_IDX(capture_moves);
+            capture_moves &= capture_moves - 1;
+            Bitboard move_bb = 1ULL << move_idx;
+
+            // we know the move captures an enemy piece so far (pseudo valid)
+            // so we have to make sure it does not leave our king in check
+            // knihgts cant possible land on the same rank or file or diagonal so if knight is pinned
+            // it stays there
+            // if(pin_mask & this_bishop_occ)
+            // {
+            //     // if piece is pinned but the move still blocks (along the same pinned ray) then move is valid
+            //     if(pin_ray_mask[this_bishop_sq] & move_bb)
+            //     {
+            //         // lets figure out what piece this move is capturing (using our mailbox representation)
+            //         Piece_Type captured = mailbox[!turn][move_idx];
+            //         buf[cnt++] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u);
+
+            //     }
+            // }
+            // // piece is not pinned so move is valid
+            // else
+            // {
+            //     // lets figure out what piece this move is capturing
+            //     Piece_Type captured = mailbox[!turn][move_idx];
+            //     buf[cnt++] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u);
+
+            // }
+
+            Piece_Type captured = mailbox[!turn][move_idx];
+            Move m = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u, 0u);
+
+            bool allowed = (pin_mask & this_bishop_occ)
+                            ? (pin_ray_mask[this_bishop_sq] & move_bb)
+                            : 1;
+
+            cnt += allowed & ((buf[cnt] = m), 1);
+        }
+    }
+}
+
+static inline __attribute__((always_inline)) void generate_only_captures_rook_moves(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+    Bitboard ally_rooks_occ    = piece_occ_bb[turn][Rook];
+    Bitboard opp_occ           = player_occ_bb[!turn];
+    Bitboard empty_occ         = ~player_occ_bb[all_color];
+    Bitboard all_occ           = player_occ_bb[all_color];
+
+    while (ally_rooks_occ)
+    {
+        int this_rook_sq = LS1B_IDX(ally_rooks_occ);
+        ally_rooks_occ &= ally_rooks_occ - 1;
+
+        Bitboard this_rook_occ = 1ULL << this_rook_sq;
+
+        Bitboard possible_moves     = GET_ROOK_ATTACK(all_occ, this_rook_sq);
+        Bitboard capture_moves      = possible_moves & opp_occ;
+
+        while (capture_moves)
+        {
+            int move_idx = LS1B_IDX(capture_moves);
+            capture_moves &= capture_moves - 1;
+            Bitboard move_bb = 1ULL << move_idx;
+
+            Piece_Type captured = mailbox[!turn][move_idx];
+            Move m = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u, 0u);
+
+            bool allowed = (pin_mask & this_rook_occ)
+                            ? (pin_ray_mask[this_rook_sq] & move_bb)
+                            : 1;
+
+            cnt += allowed & ((buf[cnt] = m), 1);
+
+            // if (pin_mask & this_rook_occ)
+            // {
+            //     if (pin_ray_mask[this_rook_sq] & move_bb)
+            //     {
+            //         Piece_Type captured = mailbox[!turn][move_idx];
+            //         buf[cnt++] = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u);
+
+            //     }
+            // }
+            // else
+            // {
+            //     Piece_Type captured = mailbox[!turn][move_idx];
+            //     buf[cnt++] = Encoder::construct_move(this_rook_sq, move_idx, Rook, captured, Empty, 0u);
+
+            // }
+        }
+    }
+}
+
+static inline __attribute__((always_inline)) void generate_only_captures_queen_moves(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+    Bitboard ally_queens_occ    = piece_occ_bb[turn][Queen];
+    Bitboard opp_occ            = player_occ_bb[!turn];
+    Bitboard empty_occ          = ~player_occ_bb[all_color];
+    Bitboard all_occ            = player_occ_bb[all_color];
+
+    while (ally_queens_occ)
+    {
+        int this_queen_sq = LS1B_IDX(ally_queens_occ);
+        ally_queens_occ &= ally_queens_occ - 1;
+
+        Bitboard this_queen_occ = 1ULL << this_queen_sq;
+
+        Bitboard possible_moves     = GET_QUEEN_ATTACK(all_occ, this_queen_sq);
+        Bitboard capture_moves      = possible_moves & opp_occ;
+
+        while (capture_moves)
+        {
+            int move_idx = LS1B_IDX(capture_moves);
+            capture_moves &= capture_moves - 1;
+            Bitboard move_bb = 1ULL << move_idx;
+
+            Piece_Type captured = mailbox[!turn][move_idx];
+            Move m = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u, 0u);
+
+            // compute a 0/1 “allowed” mask:
+            //    - if pinned, only allow when pin_ray_mask lines up
+            //    - else always allow
+            bool allowed = (pin_mask & this_queen_occ)
+                            ? (pin_ray_mask[this_queen_sq] & move_bb)
+                            : 1;
+
+            // branch-free store + count increment:
+            //    - (buf[cnt] = m),1  does the write then yields 1
+            //    - allowed & (…)  is 1 only when allowed==1
+            cnt += allowed & ((buf[cnt] = m), 1);
+
+            // if (pin_mask & this_queen_occ)
+            // {
+            //     if (pin_ray_mask[this_queen_sq] & move_bb)
+            //     {
+            //         Piece_Type captured = mailbox[!turn][move_idx];
+            //         buf[cnt++] = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u);
+
+            //     }
+            // }
+            // else
+            // {
+            //     Piece_Type captured = mailbox[!turn][move_idx];
+            //     buf[cnt++] = Encoder::construct_move(this_queen_sq, move_idx, Queen, captured, Empty, 0u);
+
+            // }
+        }
+    }
+}
+
+
+static inline __attribute__((always_inline)) void generate_only_promo_pawn_moves_in_check(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+    Bitboard ally_pawn_occ = (turn == white) ? piece_occ_bb[white][Pawn] : piece_occ_bb[black][Pawn];
+    Bitboard ally_home_pawns = (turn == white) ? ( ally_pawn_occ & Tables::Rank2 ) : ( ally_pawn_occ & Tables::Rank7 );
+    Bitboard ally_to_promo_pawns = (turn == white) ? ( ally_pawn_occ & Tables::Rank7 ) : ( ally_pawn_occ & Tables::Rank2 );
+    Bitboard all_occ = player_occ_bb[all_color];
+    int push_offset = (turn == white) ? -8 : 8;
+
+    //
+    while (ally_to_promo_pawns)
+    {
+        int ally_pwn_sq = LS1B_IDX(ally_to_promo_pawns);
+        ally_to_promo_pawns &= ally_to_promo_pawns - 1;     // clear LS1B
+
+        // get the destination square index
+        int to_sq = ally_pwn_sq + push_offset;
+        // Note we can figure out the flag from the promo piece so we dont need the flag
+        //uint32_t move_flags = Encoder::FLAG_PROMOTION;    // not needed
+
+        // lets create the push1 forward occupancy bitboard
+        //Bitboard push1_occ = (turn == white) ? ( ally_pwn_occ_bb >> 8 ) : ( ally_pwn_occ_bb << 8 );
+        Bitboard push1_occ =  ( 1ULL << to_sq );
+
+         // if move does not land on the ray mask (the squares must be blocked)
+        // pawn cant capture forwards so we must account for it too
+        // so even if the move lands on the ray mask but it also lands on enemy occupancy bitboard then we know this is the square the attacker is on
+        // thus we cant move a pawn "forward" there
+        // NOTE we already checked for this
+        if( (check_mask & push1_occ) == 0 )
+            continue;
+
+        // if this is an empty square
+        if( (push1_occ & all_occ) == 0 )
+        {
+            Bitboard ally_pwn_occ_bb = 1ULL << ally_pwn_sq;
+
+            // now we know the move (single push promo) is pseudo valid, now we check if it does not leave our king in check
+            // if this is non_zero it means this pawn was in the flaged pinned pieces squares
+            if(pin_mask & ally_pwn_occ_bb)
+            {
+                // only valid moves are along the same ray this piece was blocking the enemy attacker
+                // pin_ray_mask contains only such moves marked
+                // so if this is nonzero we save the move cuz its still blocking the check
+                if(pin_ray_mask[ally_pwn_sq] & ( 1ULL << to_sq ))
+                {
+                    // construct the move and save it
+                    buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u, 0u);
+
+                    buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u, 0u);
+
+                    buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u, 0u);
+
+                    buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u, 0u);
+
+                }
+                else
+                    continue;   //  if the move was not in the right direction to keep blocking the check we skip to next pawn (this pawn push leaves king in check)
+            }
+            // if square was not on pinned pieces then save the move
+            else
+            {
+                // construct the move and save it
+                buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Queen, 0u, 0u);
+
+                buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Rook, 0u, 0u);
+
+                buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Bishop, 0u, 0u);
+
+                buf[cnt++] = Encoder::construct_move(ally_pwn_sq, to_sq, Pawn, Empty, Knight, 0u, 0u);
+
+            }
+        }
+    }
+}
+
+static inline __attribute__((always_inline)) void generate_only_captures_king_moves_single_attacker(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+    Bitboard opp_king_occ = piece_occ_bb[!turn][King];
+    Bitboard opp_occ = player_occ_bb[!turn];
+    Bitboard empty_occ = ~player_occ_bb[all_color];
+    Bitboard all_occ = player_occ_bb[all_color];
+    int king_sq = king_position[turn];
+
+    // get the possible attack bitboard mask
+    Bitboard possible_moves = GET_KING_ATTACK(king_sq);
+
+    Bitboard capture_moves = possible_moves & opp_occ;
+
+    //
+    while (capture_moves)
+    {
+        int move_idx = LS1B_IDX(capture_moves);
+        capture_moves &= capture_moves - 1;
+
+        Bitboard move_bb = 1ULL << move_idx;
+
+        // i dont see how to shorcircuit here tho
+
+        Bitboard occ_after = (all_occ ^ (1ULL<<king_sq)) | (1ULL<<move_idx);
+        // if king ends in check move is not valid
+        if(IS_SQUARE_ATTACKED(!turn, occ_after ,move_idx))
+            continue;
+
+        // if enemy king is too close move is not valid
+        if(GET_KING_ATTACK(move_idx) & opp_king_occ)
+            continue;
+
+        // lets figure out what piece this move is capturing
+        Piece_Type captured = mailbox[!turn][move_idx];
+        buf[cnt++] = Encoder::construct_move(king_sq, move_idx, King, captured, Empty, 0u, 0u);
+    }
+}
+
+static inline __attribute__((always_inline)) void generate_only_captures_knight_moves_in_check(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+    Bitboard ally_knights_occ = piece_occ_bb[turn][Knight];
+    Bitboard opp_occ = player_occ_bb[!turn];
+    Bitboard empty_occ = ~player_occ_bb[all_color];
+
+    while (ally_knights_occ)
+    {
+        int this_knight_sq = LS1B_IDX(ally_knights_occ);
+        ally_knights_occ &= ally_knights_occ - 1;     // clear LS1B
+
+        Bitboard this_knight_occ = 1ULL << this_knight_sq;
+
+        // get the possible attack bitboard mask
+        Bitboard possible_moves = GET_KNIGHT_ATTACK(this_knight_sq);
+
+        Bitboard capture_moves = possible_moves & opp_occ;
+        Bitboard non_capture_moves = possible_moves & empty_occ;
+
+        //
+        while (capture_moves)
+        {
+            int move_idx = LS1B_IDX(capture_moves);
+            capture_moves &= capture_moves - 1;
+
+            Bitboard move_bb = 1ULL << move_idx;
+            // if move does not block or captue the enemy piece attacking our king then skip
+            if((move_bb & check_mask) == 0)
+                continue;
+
+            // we know the move captures an enemy piece so far (pseudo valid)
+            // so we have to make sure it does not leave our king in check
+            // knihgts cant possible land on the same rank or file or diagonal so if knight is pinned
+            // it stays there
+            if(pin_mask & this_knight_occ)
+                continue;
+            // piece is not pinned so move is valid
+            else
+            {
+                // lets figure out what piece this move is capturing
+                Piece_Type captured = mailbox[!turn][move_idx];
+                buf[cnt++] = Encoder::construct_move(this_knight_sq, move_idx, Knight, captured, Empty, 0u, 0u);
+
+            }
+        }
+    }
+}
+
+static inline __attribute__((always_inline)) void generate_only_captures_bishop_moves_in_check(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+    Bitboard ally_bishops_occ = piece_occ_bb[turn][Bishop];
+    Bitboard opp_occ = player_occ_bb[!turn];
+    Bitboard empty_occ = ~player_occ_bb[all_color];
+    Bitboard all_occ = player_occ_bb[all_color];
+
+    while (ally_bishops_occ)
+    {
+        int this_bishop_sq = LS1B_IDX(ally_bishops_occ);
+        ally_bishops_occ &= ally_bishops_occ - 1;     // clear LS1B
+
+        Bitboard this_bishop_occ = 1ULL << this_bishop_sq;
+
+        // get the possible attack bitboard mask
+        Bitboard possible_moves = GET_BISHOP_ATTACK(all_occ, this_bishop_sq);
+
+        Bitboard capture_moves = possible_moves & opp_occ;
+        Bitboard non_capture_moves = possible_moves & empty_occ;
+
+        //
+        while (capture_moves)
+        {
+            int move_idx = LS1B_IDX(capture_moves);
+            capture_moves &= capture_moves - 1;
+            Bitboard move_bb = 1ULL << move_idx;
+            // if move does not block or captue the enemy piece attacking our king then skip
+            if((move_bb & check_mask) == 0)
+                continue;
+
+            // we know the move captures an enemy piece so far (pseudo valid)
+            // so we have to make sure it does not leave our king in check
+            // knihgts cant possible land on the same rank or file or diagonal so if knight is pinned
+            // it stays there
+            if(pin_mask & this_bishop_occ)
+            {
+                // if piece is pinned but the move still blocks (along the same pinned ray) then move is valid
+                if(pin_ray_mask[this_bishop_sq] & move_bb)
+                {
+                    // lets figure out what piece this move is capturing (using our mailbox representation)
+                    Piece_Type captured = mailbox[!turn][move_idx];
+                    buf[cnt++] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u, 0u);
+
+                }
+            }
+            // piece is not pinned so move is valid
+            else
+            {
+                // lets figure out what piece this move is capturing
+                Piece_Type captured = mailbox[!turn][move_idx];
+                buf[cnt++] = Encoder::construct_move(this_bishop_sq, move_idx, Bishop, captured, Empty, 0u, 0u);
+
+            }
+        }
+    }
+}
+
+static inline __attribute__((always_inline)) void generate_only_captures_rook_moves_in_check(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+    Bitboard ally_rooks_occ    = piece_occ_bb[turn][Rook];
+    Bitboard opp_occ           = player_occ_bb[!turn];
+    Bitboard empty_occ         = ~player_occ_bb[all_color];
+    Bitboard all_occ           = player_occ_bb[all_color];
+
+    while (ally_rooks_occ)
+    {
+        int this_rook_sq = LS1B_IDX(ally_rooks_occ);
+        ally_rooks_occ &= ally_rooks_occ - 1;
+
+        Bitboard this_rook_occ = 1ULL << this_rook_sq;
+
+        Bitboard possible_moves     = GET_ROOK_ATTACK(all_occ, this_rook_sq);
+        Bitboard capture_moves      = possible_moves & opp_occ;
+
+        // branchless capture rook moves
+        while (capture_moves) {
+            int to = LS1B_IDX(capture_moves);
+            capture_moves &= capture_moves - 1;
+            Bitboard to_bb = 1ULL << to;
+
+            // build the move unconditionally
+            Piece_Type cap = mailbox[!turn][to];
+            Move M = Encoder::construct_move(this_rook_sq, to, Rook, cap, Empty, 0u, 0u);
+
+            // must block/resolve check
+            uint64_t ok_check = ((to_bb & check_mask) != 0);
+
+            // pin constraint: either not pinned, or pinned-but-still-on-the-ray
+            uint64_t ok_pin = (pin_mask & this_rook_occ)
+                            ? ((pin_ray_mask[this_rook_sq] & to_bb) != 0)
+                            : 1;
+
+            uint64_t ok = ok_check & ok_pin;
+
+            // only write & count when ok==1
+            cnt += ok & ((buf[cnt] = M), 1);
+        }
+    }
+}
+
+static inline __attribute__((always_inline)) void generate_only_captures_queen_moves_in_check(int depth)
+{
+    Move_List &ML = move_list[depth];
+    Move*      buf = ML.moves;
+    int&       cnt = ML.count;
+
+    Bitboard ally_queens_occ    = piece_occ_bb[turn][Queen];
+    Bitboard opp_occ            = player_occ_bb[!turn];
+    Bitboard empty_occ          = ~player_occ_bb[all_color];
+    Bitboard all_occ            = player_occ_bb[all_color];
+
+    while (ally_queens_occ)
+    {
+        int this_queen_sq = LS1B_IDX(ally_queens_occ);
+        ally_queens_occ &= ally_queens_occ - 1;
+
+        Bitboard this_queen_occ = 1ULL << this_queen_sq;
+
+        Bitboard possible_moves     = GET_QUEEN_ATTACK(all_occ, this_queen_sq);
+        Bitboard capture_moves      = possible_moves & opp_occ;
+
+        // branchless capture queen moves
+        while (capture_moves) {
+            int to = LS1B_IDX(capture_moves);
+            capture_moves &= capture_moves - 1;
+            Bitboard move_bb = 1ULL << to;
+
+            // build the move once
+            Piece_Type cap = mailbox[!turn][to];
+            Move M = Encoder::construct_move(this_queen_sq, to, Queen, cap, Empty, 0u, 0u);
+
+            // must block/resolve check
+            uint64_t ok_check = ((move_bb & check_mask) != 0);
+
+            // pin constraint
+            uint64_t ok_pin = (pin_mask & this_queen_occ)
+                            ? ((pin_ray_mask[this_queen_sq] & move_bb) != 0)
+                            : 1;
+
+            uint64_t ok = ok_check & ok_pin;
+
+            // store+count only if ok==1
+            cnt += ok & ((buf[cnt] = M), 1);
+        }
+    }
+}
+
+
+static inline __attribute__((always_inline)) void generate_only_captures_moves(int depth)
+{
+    // zero the move count
+    move_list[depth].count = 0;
+
+    //
+    generate_check_mask();
+
+    // unblckable check
+    if(num_attackers > 1)
+    {
+        generate_only_captures_king_moves(depth);
+
+        // if move count is zero here this is check mate
+    }
+    // blockable check
+    else if(num_attackers == 1)
+    {
+        generate_pin_mask();
+        generate_only_captures_king_moves_single_attacker(depth);
+        generate_only_promo_pawn_moves_in_check(depth);
+        generate_capture_pawn_moves_in_check(depth);
+        generate_only_captures_knight_moves_in_check(depth);
+        generate_only_captures_bishop_moves_in_check(depth);
+        generate_only_captures_rook_moves_in_check(depth);
+        generate_only_captures_queen_moves_in_check(depth);
+
+        // if move count is zero here this is check mate
+    }
+    // no check
+    else
+    {
+        generate_pin_mask();
+        generate_only_promo_pawn_moves(depth);
+        generate_capture_pawn_moves(depth);
+        generate_only_captures_knight_moves(depth);
+        generate_only_captures_knight_moves(depth);
+        generate_only_captures_bishop_moves(depth);
+        generate_only_captures_rook_moves(depth);
+        generate_only_captures_queen_moves(depth);
+
+        // if move count is zero here this is stalemate
+    }
+}
+
 
 }   // end Move_Gen namepsace
 }   // end RedStone namespace

@@ -1,6 +1,5 @@
 #include"utils/misc.h"
 #include"search/search.h"
-#include <chrono>
 #include"uci_protocol/uci.h"
 
 using namespace RedStone;

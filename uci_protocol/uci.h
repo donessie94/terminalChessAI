@@ -2,6 +2,7 @@
 #include "../move/move_gen.h"
 #include <iostream>
 #include  <sstream>
+#include <chrono>
 
 namespace RedStone{
 
@@ -136,10 +137,13 @@ inline void on_position(const std::string& args)
 
 inline void on_go(const std::string& args)
 {
-    // parse depth/movetime/etc., call our search, then:
-    // std::string best = think(depth, movetime);
-    // std::cout << "bestmove " << best << "\n";
-    Move best = Search::find_best_move(6);
+    using namespace std::chrono;
+
+    int depth = 8;
+    auto t0 = steady_clock::now();
+    Move best = (Move_Gen::turn == white) ? Search::find_best_move_white(depth) : Search::find_best_move_black(depth) ;
+    auto t1 = steady_clock::now();
+    auto dt = duration_cast<milliseconds>(t1 - t0).count();
 
     // unpack
     int from = Encoder::move_get_from(best);
@@ -161,6 +165,8 @@ inline void on_go(const std::string& args)
     std::cout << "evaluation " << Search::pos_eval << "\n";
     std::cout << "nodes " << Search::node_count << "\n";
     std::cout << "prunes " << Search::prune_count << "\n";
+    printf("Search time: %lld ms\n", (long long)dt);
+    printf("Nodes per milisecond: %llu", (Search::node_count / dt));
     Search::node_count=0;
     Search::prune_count=0;
     Search::pos_eval=0;

@@ -190,8 +190,20 @@ static inline __attribute__((always_inline)) Piece_Type move_get_promo_piece(Mov
 static inline __attribute__((always_inline)) uint32_t move_get_flags(Move m) {
     return m & FLAGS_MASK;
 }
-static inline __attribute__((always_inline)) uint8_t move_get_score(Move m) {
-    return uint8_t((m & SCORE_MASK) >> SCORE_SHIFT);
+// inline getter that falls back to 0 when there's no capture
+static inline __attribute__((always_inline))
+uint8_t move_get_score(Move m) {
+    Piece_Type attacker = Encoder::move_get_moved_piece(m);
+    Piece_Type victim   = Encoder::move_get_captured_piece(m);
+    if (victim != Empty
+     && attacker < Pawn+5   // ensure attacker ∈ [Pawn..Queen]
+     && victim   < Pawn+5)  // ensure victim   ∈ [Pawn..Queen]
+    {
+        return Tables::MVV_LVA[int(attacker)][int(victim)];
+    }
+    else {
+        return 0;
+    }
 }
 
 // convenience flag-checks
