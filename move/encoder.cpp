@@ -15,7 +15,7 @@ const char *unicode_pieces[] = {
 };
 
 // Define coordinate lookup:
-const char *square_to_coord[128] = {
+const char *square_to_coord[65] = {
     "a8","b8","c8","d8","e8","f8","g8","h8",
     "a7","b7","c7","d7","e7","f7","g7","h7",
     "a6","b6","c6","d6","e6","f6","g6","h6",
@@ -48,6 +48,13 @@ const int char_to_piece_type[] = {
     ['K'] = Piece_Type::King,   ['k'] = Piece_Type::King,
     ['e'] = Piece_Type::Empty
 };
+
+Move max_killer[2][64];
+Move min_killer[2][64];
+uint8_t max_history_move_score[64][64];
+uint8_t min_history_move_score[64][64];
+Move principal_variation_move[65][65];
+Move principal_variation_length[65];
 
 } // end Encoder namespace
 } // end RedStone namespace

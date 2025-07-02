@@ -3,7 +3,7 @@
 
 namespace RedStone{
 
-static constexpr int MAX_DEPTH = 30;
+static constexpr unsigned long MAX_DEPTH = 64;
 static constexpr int MAX_MOVES = 218;
 
 // Helpers Macros ===================================================================================================================================================
@@ -133,7 +133,7 @@ extern Piece_Type mailbox[2][64];
 static inline __attribute__((always_inline)) void generate_pin_mask()
 {
     /* reset pin_mask first */
-    pin_mask = 0ULL;
+    //pin_mask = 0ULL;
     // std::memset(pin_ray_mask, 0, sizeof(pin_ray_mask));
     std::memset(pin_ray_mask, 0, 512);
 
@@ -204,6 +204,62 @@ static inline __attribute__((always_inline)) void generate_pin_mask()
             SET_BIT(pin_mask, blocker_sq);
             pin_ray_mask[blocker_sq] = between_bb | (1ULL << attacker_sq);
         }
+    }
+}
+
+static inline __attribute__((always_inline))
+void generate_opposite_king_mask()
+{
+    // clear out last run
+    pin_mask = 0ULL;
+    std::memset(pin_ray_mask, 0, 512);
+
+    // map your bool 'turn' into the Color enum
+    Color me   = turn ? black : white;
+    Color them = turn ? white : black;
+
+    // their king’s square
+    int ksq = king_position[them];
+
+    // build our slider occupancy
+    Bitboard our_QR = piece_occ_bb[me][Rook]   | piece_occ_bb[me][Queen];
+    Bitboard our_QB = piece_occ_bb[me][Bishop] | piece_occ_bb[me][Queen];
+
+    // all-pieces occupancy
+    Bitboard occ    = player_occ_bb[all_color];
+
+    // potential pinners along rays
+    Bitboard diag_sliders  = Tables::diagonal_ray_mask[ksq]   & our_QB;
+    Bitboard ortho_sliders = Tables::orthogonal_ray_mask[ksq] & our_QR;
+
+    // check diagonal pins
+    while (diag_sliders) {
+      int a = LS1B_IDX(diag_sliders);
+      diag_sliders &= diag_sliders - 1;
+
+      Bitboard between  = Tables::between_squares_mask[a][ksq];
+      Bitboard blockers = between & occ;
+
+      if (COUNT_BITS(blockers) == 1 && (blockers & player_occ_bb[them])) {
+        int b = LS1B_IDX(blockers);
+        SET_BIT(pin_mask, b);
+        pin_ray_mask[b] = between | (1ULL << a);
+      }
+    }
+
+    // check orthogonal pins
+    while (ortho_sliders) {
+      int a = LS1B_IDX(ortho_sliders);
+      ortho_sliders &= ortho_sliders - 1;
+
+      Bitboard between  = Tables::between_squares_mask[a][ksq];
+      Bitboard blockers = between & occ;
+
+      if (COUNT_BITS(blockers) == 1 && (blockers & player_occ_bb[them])) {
+        int b = LS1B_IDX(blockers);
+        SET_BIT(pin_mask, b);
+        pin_ray_mask[b] = between | (1ULL << a);
+      }
     }
 }
 
@@ -1981,6 +2037,7 @@ static inline __attribute__((always_inline)) void generate_moves(int depth)
 {
     // zero the move count
     move_list[depth].count = 0;
+    pin_mask = 0ULL;
 
     //
     generate_check_mask();
@@ -1996,13 +2053,13 @@ static inline __attribute__((always_inline)) void generate_moves(int depth)
     else if(num_attackers == 1)
     {
         generate_pin_mask();
-        generate_king_moves_single_attacker(depth);
-        generate_non_capture_pawn_moves_in_check(depth);
         generate_capture_pawn_moves_in_check(depth);
         generate_knight_moves_in_check(depth);
         generate_bishop_moves_in_check(depth);
         generate_rook_moves_in_check(depth);
         generate_queen_moves_in_check(depth);
+        generate_non_capture_pawn_moves_in_check(depth);
+        generate_king_moves_single_attacker(depth);
 
         // if move count is zero here this is check mate
     }
@@ -2010,14 +2067,14 @@ static inline __attribute__((always_inline)) void generate_moves(int depth)
     else
     {
         generate_pin_mask();
-        generate_non_capture_pawn_moves(depth);
-        generate_capture_pawn_moves(depth);
         generate_castle_moves(depth);
-        generate_king_moves(depth);
+        generate_capture_pawn_moves(depth);
         generate_knight_moves(depth);
         generate_bishop_moves(depth);
         generate_rook_moves(depth);
         generate_queen_moves(depth);
+        generate_non_capture_pawn_moves(depth);
+        generate_king_moves(depth);
 
         // if move count is zero here this is stalemate
     }
@@ -3215,6 +3272,20 @@ static inline __attribute__((always_inline)) void generate_only_captures_moves(i
     }
 }
 
+static inline __attribute__((always_inline))
+void sort_moves_by_score(int depth)
+{
+    auto &ML = move_list[depth];
+    bool is_max = (turn == white);
+    std::sort(
+      ML.moves,
+      ML.moves + ML.count,
+      [=](Move a, Move b) {
+        return Encoder::move_get_score(a, depth, is_max)
+             > Encoder::move_get_score(b, depth, is_max);
+      }
+    );
+}
 
 }   // end Move_Gen namepsace
 }   // end RedStone namespace

@@ -85,7 +85,7 @@ static inline __attribute__((always_inline)) void set_castle_right(UndoPacked &u
 }
 // Undo ============================================================================================================
 
-extern const char *square_to_coord[128];    // coordinate strings
+extern const char *square_to_coord[65];    // coordinate strings
 extern const char ascii_pieces[];           // ASCII piece symbols
 extern const char *unicode_pieces[];        // Unicode piece symbols
 extern const int char_to_piece[];
@@ -190,21 +190,110 @@ static inline __attribute__((always_inline)) Piece_Type move_get_promo_piece(Mov
 static inline __attribute__((always_inline)) uint32_t move_get_flags(Move m) {
     return m & FLAGS_MASK;
 }
-// inline getter that falls back to 0 when there's no capture
+
+static constexpr uint8_t PROMOTION_BONUS = 100;
+static constexpr uint8_t KILLER1_BONUS = 60;
+static constexpr uint8_t KILLER2_BONUS = 50;
+static constexpr uint8_t HISTORY_BONUS = 2;
+static constexpr uint16_t PV_BONUS = 1000;
+
+// for storing historic moves (64x64 cuz from_squ -> to_sq)
+// we want to index a move but obviously having something like
+// historic[move] = something wont cut it because the HUGE
+// ammount of different moves possible, ex:
+// e2e1.e2e3,e2e4,e2e5, ... and so on HUGE
+//
+// with this approach down here we
+// unquely identify the move [from][to] non-captures, non-promos
+// and it only cost us at most 4 096 possible quiet moves WAY LOWER
+extern uint8_t max_history_move_score[64][64];
+extern uint8_t min_history_move_score[64][64];
+
+// for storing our killer moves
+extern Move max_killer[2][64];
+extern Move min_killer[2][64];
+
+// ==================================================
+// Principal Variation Array                        |
+// ==================================================
+// idx   0      1      2       3 . . .  Max_Depth+1 |
+//                                                  |
+// 0    M1     M2     M3      M4                    |
+//                                                  |
+// 1     0     M2     M3      M4                    |
+//                                                  |
+// 2     0      0     M3      M4                    |
+//                                                  |
+// 3     0      0      0      M4                    |
+// .                                                |
+// .                                                |
+// .                                                |
+// Max_Depth+1                                      |
+// ==================================================
+extern Move principal_variation_move[65][65];
+extern Move principal_variation_length[65];
+
+
+// now takes depth and is_max‐node so it can look up the right killer array
 static inline __attribute__((always_inline))
-uint8_t move_get_score(Move m) {
-    Piece_Type attacker = Encoder::move_get_moved_piece(m);
-    Piece_Type victim   = Encoder::move_get_captured_piece(m);
+uint16_t move_get_score(Move m, int depth, bool is_max)
+{
+    Piece_Type attacker = move_get_moved_piece(m);
+    Piece_Type victim   = move_get_captured_piece(m);
+
+    // PV‐move super‐bonus so we try the first "line of moves" we found are best from
+    // our previous iteration of the search (iterative deepening)
+    if (m == principal_variation_move[0][depth])
+        return PV_BONUS;
+
+    // MVV/LVA captures
     if (victim != Empty
-     && attacker < Pawn+5   // ensure attacker ∈ [Pawn..Queen]
-     && victim   < Pawn+5)  // ensure victim   ∈ [Pawn..Queen]
+     && attacker < King)    // attacker in [Pawn..Queen]
     {
         return Tables::MVV_LVA[int(attacker)][int(victim)];
     }
-    else {
-        return 0;
+
+    // promotions
+    Piece_Type promo = move_get_promo_piece(m);
+    if (promo != Empty)
+    {
+        switch (promo)
+        {
+            case Queen:  return PROMOTION_BONUS +   0;
+            case Rook:   return PROMOTION_BONUS -  10;
+            case Bishop: return PROMOTION_BONUS -  20;
+            case Knight: return PROMOTION_BONUS -  30;
+            default:     return PROMOTION_BONUS;
+        }
     }
+
+    // killer‐move bonuses
+    if (is_max)
+    {
+        if (m == max_killer[0][depth]) return KILLER1_BONUS;
+        if (m == max_killer[1][depth]) return KILLER2_BONUS;
+    }
+    else
+    {
+        if (m == min_killer[0][depth]) return KILLER1_BONUS;
+        if (m == min_killer[1][depth]) return KILLER2_BONUS;
+    }
+
+    // history heuristic
+    // give moves that have caused cutoffs in the past a modest bonus
+    // {
+    //   int from = Encoder::move_get_from(m);
+    //   int to   = Encoder::move_get_to(m);
+    //   uint8_t hist = is_max
+    //     ? max_history_move_score[from][to]
+    //     : min_history_move_score[from][to];
+    //   return hist;
+    // }
+
+    // truly quiet moves
+    return 0;
 }
+
 
 // convenience flag-checks
 static inline __attribute__((always_inline)) bool move_is_double_pawn(Move m) {

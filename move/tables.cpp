@@ -4,6 +4,7 @@ namespace RedStone{
 
 namespace Tables{
 
+Bitboard KING_ZONE[64];
 //
 Bitboard pawn_attack_bb[2][64];  // e.g. side 0=white, 1=black
 Bitboard knight_attack_bb[64];
@@ -35,6 +36,7 @@ void initialize_precomputed_tables()
     //
     compute_bishop_attack_table();
     compute_rook_attack_table();
+    build_king_zones();
 }
 
 // ALL COMBINATIONS OF SIZE N ======================================================================================

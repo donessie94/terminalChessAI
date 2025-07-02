@@ -26,7 +26,7 @@ static inline void print_move_info(Move m) {
     Piece_Type cp  = Encoder::move_get_captured_piece(m);
     Piece_Type pp  = Encoder::move_get_promo_piece(m);
     uint32_t flags = Encoder::move_get_flags(m);
-    uint8_t score  = Encoder::move_get_score(m);
+    uint8_t score  = Encoder::move_get_score(m, 0, 1);
 
     // algebraic from/to
     char from_file = 'a' + (from & 7);

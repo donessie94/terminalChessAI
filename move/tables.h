@@ -154,10 +154,10 @@ static const int PST[6][64] = {
     {
        0,   0,   0,   0,   0,   0,   0,   0,
       40,  80,  80,  70,  70,  80,  80,  40,
-       5,   5,  10,  20,  20,  10,   5,   5,
-       0,   0,   0,  25,  25,   0,   0,   0,
        5,   5,  10,  25,  25,  10,   5,   5,
-      10,  10,  20,  25,  25,  20,  10,  10,
+       5,   5,  10,  25,  25,  10,   5,   5,
+       5,   5,  10,  25,  25,  10,   5,   5,
+      10,  10,  20,  10,  10,  20,  10,  10,
       40,  40,  40, -25, -25,  40,  40,  40,
        0,   0,   0,   0,   0,   0,   0,   0
     },
@@ -232,6 +232,28 @@ static constexpr int MVV_LVA[5][5] = {
   /*         Q */  { 101, 201, 301, 401, 501 },
   // kings never capture in MVV/LVA
 };
+
+// global array, indexed by square 0…63
+extern Bitboard KING_ZONE[64];
+
+//
+static inline __attribute__((always_inline))
+void build_king_zones() {
+  for (int sq = 0; sq < 64; ++sq) {
+    Bitboard m = 0ULL;
+    int rk = sq >> 3, fl = sq & 7;
+    // only one square away in any direction, plus the center (dr=0,df=0)
+    for (int dr = -1; dr <= 1; ++dr) {
+      for (int df = -1; df <= 1; ++df) {
+        int r2 = rk + dr, f2 = fl + df;
+        if (r2 >= 0 && r2 < 8 && f2 >= 0 && f2 < 8) {
+          m |= (Bitboard(1) << (r2*8 + f2));
+        }
+      }
+    }
+    KING_ZONE[sq] = m;
+  }
+}
 
 // helper function
 inline int sign(int x) {

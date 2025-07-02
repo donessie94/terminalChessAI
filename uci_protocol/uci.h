@@ -141,7 +141,8 @@ inline void on_go(const std::string& args)
 
     int depth = 8;
     auto t0 = steady_clock::now();
-    Move best = (Move_Gen::turn == white) ? Search::find_best_move_white(depth) : Search::find_best_move_black(depth) ;
+    //Move best = (Move_Gen::turn == white) ? Search::find_best_move_white(depth) : Search::find_best_move_black(depth) ;
+    Move best = (Move_Gen::turn == white) ? Search::iterative_deepen(true, depth) : Search::iterative_deepen(false, depth) ;
     auto t1 = steady_clock::now();
     auto dt = duration_cast<milliseconds>(t1 - t0).count();
 
@@ -162,6 +163,7 @@ inline void on_go(const std::string& args)
 
     // output the move so the uci program gets it
     std::cout << "bestmove " << mv << "\n";
+    Search::print_PV();
     std::cout << "evaluation " << Search::pos_eval << "\n";
     std::cout << "nodes " << Search::node_count << "\n";
     std::cout << "prunes " << Search::prune_count << "\n";
