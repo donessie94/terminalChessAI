@@ -124,7 +124,7 @@ static inline __attribute__((always_inline)) int static_evaluation(bool is_max, 
 unsigned search_depth;
 
 // 0 for white (+ infinity) and 1 for black (- infinity)
-constexpr const int infinity[2] = { 100000, -100000 };
+constexpr const int infinity[2] = { 20000, -20000 };
 
 unsigned long long node_count;
 unsigned long long prune_count;
@@ -459,6 +459,10 @@ static inline __attribute__((always_inline)) void perft_test(int depth)
 }
 
 // White pieces
+// NOTE: Alpha is set in MAX and that value is used for his childs only (unless MIN picks
+// this value as its BETA on top of it, where then this value becomes the Beta of the parent)
+// And its the same thing for Beta
+// so Alpha trasnform into Beta and viceversa when its picked by the parent (when is bets for the parent)
 static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int beta, int depth)
 {
     // break rule when we reach max depth
@@ -685,6 +689,8 @@ Move find_best_move_white(int max_depth)
             best_move         = m;
             alpha             = next_eval;  // tighten α
 
+            beta = alpha+1;//
+
             // copy the PV from ply 1 into pv_table[0]
             principal_variation_move[0][0] = m;
             principal_variation_length[0]   = 1 + principal_variation_length[1];
@@ -743,6 +749,7 @@ Move find_best_move_black(int max_depth)
             current_node_best = next_eval;
             best_move         = m;
             beta              = next_eval;  // tighten β
+            alpha = beta-1;//
             principal_variation_move[0][0] = m;
             principal_variation_length[0]   = 1 + principal_variation_length[1];
             for (int j = 0; j < principal_variation_length[1]; ++j)
@@ -759,7 +766,8 @@ static inline __attribute__((always_inline))
 Move iterative_deepen(bool white_to_move, int max_depth)
 {
     std::fill(Encoder::principal_variation_length, Encoder::principal_variation_length + max_depth + 1, 0);
-
+    std::memset(Encoder::max_killer, 0, sizeof(Encoder::max_killer));
+    std::memset(Encoder::min_killer, 0, sizeof(Encoder::min_killer));
     Move best = 0;
     for (int d = 1; d <= max_depth; ++d) {
         if (white_to_move) {
