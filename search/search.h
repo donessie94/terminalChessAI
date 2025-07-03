@@ -7,6 +7,8 @@ namespace RedStone{
 
 namespace Search{
 
+#define INF 20000
+
 // “Black territory” is the top half (ranks 5–8), “White territory” the bottom half (ranks 1–4):
 static constexpr Bitboard BLACK_TERRITORY = 0xFFFFFFFF00000000ULL;
 static constexpr Bitboard WHITE_TERRITORY = 0x00000000FFFFFFFFULL;
@@ -124,7 +126,7 @@ static inline __attribute__((always_inline)) int static_evaluation(bool is_max, 
 unsigned search_depth;
 
 // 0 for white (+ infinity) and 1 for black (- infinity)
-constexpr const int infinity[2] = { 20000, -20000 };
+constexpr const int infinity[2] = { INF, -INF };
 
 unsigned long long node_count;
 unsigned long long prune_count;
@@ -164,8 +166,7 @@ static inline __attribute__((always_inline)) int quiescence_max(int alpha, int b
     // Sort the list of moves by MVV/LVA table
     Move_Gen::sort_moves_by_score(depth);
 
-    //  - infinity basically
-    //int current_node_best = infinity[!Move_Gen::turn];
+    //
     int current_node_best = alpha; // start at the lower bound instead (same thing)
 
     // lets divide this into in check or not in check
@@ -482,7 +483,7 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
     {
         if(Move_Gen::move_list[depth].count == 0)
         {
-            return (-1) * (infinity[0] - depth);
+            return (-1) * (INF - depth);
         }
     }
     // stealmate
@@ -498,7 +499,7 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
     Move_Gen::sort_moves_by_score(depth);
 
     //  - infinity basically
-    //int current_node_best = infinity[!Move_Gen::turn];
+    //int current_node_best = -INF;
     int current_node_best = alpha; // start at the lower bound instead (same thing)
 
     // iterate all moves
@@ -509,12 +510,13 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
 
         int next_node_evaluation = alpha_beta_min(alpha, beta, depth+1);
 
-        Move_Gen::undo_move(move, undo_info);
+        //Move_Gen::undo_move(move, undo_info);
 
         // MAX does cutoff for MIN and viceversa
         // we do a soft cuttof (equal positions are not traversed)
         if(next_node_evaluation >= beta)                                                // SOFT/HARD CUT-OFFF
         {
+            Move_Gen::undo_move(move, undo_info);
             // Killer move potential for Whites (MAX), since it forced MIN to avoid this line of search cuz it has something way better elsewhere,
             // basically this move (well technically the position reached after this move) led to a worst position for Black pieces
             //
@@ -552,14 +554,21 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
         // we assign the next_node_evaluation (at the bottom is the leaf node eval basically) to current node best
         if( next_node_evaluation > current_node_best)
         {
+            //if(mv!=0)
+            //    next_node_evaluation = alpha_beta_min(alpha,  INF, /*depth=*/depth+1);
+
             // if the above is true then we found a better move for MAX player so we assign it
             // as current depth node best move
             current_node_best = next_node_evaluation;
 
             // if this evaluation is also best that our current cut-off limit then we assign it as cut-off limit
-            if(next_node_evaluation > alpha)
+            //if(next_node_evaluation > alpha)
             {
+
                 alpha = next_node_evaluation;
+
+                //
+                //beta = alpha + 1;
 
                 // this is the principal variation we have found basically (alpha for Max and beta for Min)
                 // here we record this move at the right depth spot
@@ -571,6 +580,7 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
                     Encoder::principal_variation_move[depth][1+j] = Encoder::principal_variation_move[depth+1][j];
             }
         }
+        Move_Gen::undo_move(move, undo_info);
     }
 
     return current_node_best;
@@ -589,7 +599,7 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
     {
         if(Move_Gen::move_list[depth].count == 0)
         {
-            return (infinity[0] - depth);
+            return (INF - depth);
         }
 
     }
@@ -600,16 +610,17 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
     }
     // Sort the list of moves by MVV/LVA table
     Move_Gen::sort_moves_by_score(depth);
-    //int current_node_best = infinity[!Move_Gen::turn];
+    //int current_node_best = INF;
     int current_node_best = beta;
     for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
     {
         Move move = Move_Gen::move_list[depth].moves[mv];
         UndoPacked undo_info = Move_Gen::do_move(move);
         int next_node_evaluation = alpha_beta_max(alpha, beta, depth+1);
-        Move_Gen::undo_move(move, undo_info);
+        //Move_Gen::undo_move(move, undo_info);
         if(next_node_evaluation <= alpha)                                            // SOFT/HARD CUT-OFFF
         {
+            Move_Gen::undo_move(move, undo_info);
             if (Encoder::move_get_captured_piece(move) == Empty && Encoder::move_get_promo_piece(move) == Empty)
             {
                 if (move != Encoder::min_killer[0][depth])
@@ -624,16 +635,20 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
         }
         if(next_node_evaluation < current_node_best)
         {
+            //if(mv!=0)
+            //    next_node_evaluation = alpha_beta_min(-INF, beta, /*depth=*/depth+1);
             current_node_best = next_node_evaluation;
-            if(next_node_evaluation < beta)
+            //if(next_node_evaluation < beta)
             {
                 beta = next_node_evaluation;
+                //alpha = beta-1;
                 Encoder::principal_variation_move[depth][0] = move;
                 Encoder::principal_variation_length[depth] = 1 + Encoder::principal_variation_length[depth+1];
                 for (int j = 0; j < Encoder::principal_variation_length[depth+1]; ++j)
                     Encoder::principal_variation_move[depth][1+j] = Encoder::principal_variation_move[depth+1][j];
             }
         }
+        Move_Gen::undo_move(move, undo_info);
     }
     return current_node_best;
 }
@@ -649,8 +664,8 @@ Move find_best_move_white(int max_depth)
     // std::memset(max_history_move_score, 0, sizeof(max_history_move_score));
     // std::memset(min_history_move_score, 0, sizeof(min_history_move_score));
 
-    int alpha = std::numeric_limits<int>::lowest();
-    int beta  = std::numeric_limits<int>::max();
+    int alpha = -INF;
+    int beta  = INF;
     int current_node_best = alpha;  // we want the highest score
 
     search_depth = max_depth;
@@ -681,15 +696,18 @@ Move find_best_move_white(int max_depth)
         // after White’s move, Black to play → a MIN node
         int next_eval = alpha_beta_min(alpha, beta, /*depth=*/1);
 
-        Move_Gen::undo_move(m, undo_info);
-
+        //
         if (next_eval > current_node_best)
         {
+            // our probe searched proved us wrong, we found a better possible move so we research fully for the exact evaluation of this line of play
+            if(i!=0)
+                next_eval = alpha_beta_min(alpha,  INF, /*depth=*/1);
+
             current_node_best = next_eval;
             best_move         = m;
             alpha             = next_eval;  // tighten α
 
-            beta = alpha+1;//
+            beta              = alpha+1;    // we found a good move and since we assume good ordering we will betfrom now on this is the best move, so only probe searches
 
             // copy the PV from ply 1 into pv_table[0]
             principal_variation_move[0][0] = m;
@@ -698,6 +716,9 @@ Move find_best_move_white(int max_depth)
                 principal_variation_move[0][1+j] = principal_variation_move[1][j];
         }
         // no β‐cut at root
+
+        //
+        Move_Gen::undo_move(m, undo_info);
     }
 
     pos_eval = current_node_best;
@@ -713,8 +734,8 @@ Move find_best_move_black(int max_depth)
 
     // std::memset(max_history_move_score, 0, sizeof (max_history_move_score));
     // std::memset(min_history_move_score, 0, sizeof (min_history_move_score));
-    int alpha = std::numeric_limits<int>::lowest();
-    int beta  = std::numeric_limits<int>::max();
+    int alpha = -INF;
+    int beta  = INF;
     int current_node_best = beta;  // we want the lowest score
 
     search_depth = max_depth;
@@ -742,20 +763,21 @@ Move find_best_move_black(int max_depth)
         // after Black’s move, White to play → a MAX node
         int next_eval = alpha_beta_max(alpha, beta, /*depth=*/1);
 
-        Move_Gen::undo_move(m, undo_info);
-
         if (next_eval < current_node_best)
         {
+            if(i!=0)
+                next_eval = alpha_beta_min(-INF, beta, /*depth=*/1);
             current_node_best = next_eval;
             best_move         = m;
             beta              = next_eval;  // tighten β
-            alpha = beta-1;//
+            alpha             = beta-1;
             principal_variation_move[0][0] = m;
             principal_variation_length[0]   = 1 + principal_variation_length[1];
             for (int j = 0; j < principal_variation_length[1]; ++j)
                 principal_variation_move[0][1+j] = principal_variation_move[1][j];
         }
         // no α‐cut at root
+        Move_Gen::undo_move(m, undo_info);
     }
 
     pos_eval = current_node_best;
