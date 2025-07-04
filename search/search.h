@@ -510,13 +510,12 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
 
         int next_node_evaluation = alpha_beta_min(alpha, beta, depth+1);
 
-        //Move_Gen::undo_move(move, undo_info);
+        Move_Gen::undo_move(move, undo_info);
 
         // MAX does cutoff for MIN and viceversa
         // we do a soft cuttof (equal positions are not traversed)
         if(next_node_evaluation >= beta)                                                // SOFT/HARD CUT-OFFF
         {
-            Move_Gen::undo_move(move, undo_info);
             // Killer move potential for Whites (MAX), since it forced MIN to avoid this line of search cuz it has something way better elsewhere,
             // basically this move (well technically the position reached after this move) led to a worst position for Black pieces
             //
@@ -554,8 +553,6 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
         // we assign the next_node_evaluation (at the bottom is the leaf node eval basically) to current node best
         if( next_node_evaluation > current_node_best)
         {
-            //if(mv!=0)
-            //    next_node_evaluation = alpha_beta_min(alpha,  INF, /*depth=*/depth+1);
 
             // if the above is true then we found a better move for MAX player so we assign it
             // as current depth node best move
@@ -567,9 +564,6 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
 
                 alpha = next_node_evaluation;
 
-                //
-                //beta = alpha + 1;
-
                 // this is the principal variation we have found basically (alpha for Max and beta for Min)
                 // here we record this move at the right depth spot
                 Encoder::principal_variation_move[depth][0] = move;
@@ -580,7 +574,6 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
                     Encoder::principal_variation_move[depth][1+j] = Encoder::principal_variation_move[depth+1][j];
             }
         }
-        Move_Gen::undo_move(move, undo_info);
     }
 
     return current_node_best;
@@ -617,10 +610,9 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
         Move move = Move_Gen::move_list[depth].moves[mv];
         UndoPacked undo_info = Move_Gen::do_move(move);
         int next_node_evaluation = alpha_beta_max(alpha, beta, depth+1);
-        //Move_Gen::undo_move(move, undo_info);
+        Move_Gen::undo_move(move, undo_info);
         if(next_node_evaluation <= alpha)                                            // SOFT/HARD CUT-OFFF
         {
-            Move_Gen::undo_move(move, undo_info);
             if (Encoder::move_get_captured_piece(move) == Empty && Encoder::move_get_promo_piece(move) == Empty)
             {
                 if (move != Encoder::min_killer[0][depth])
@@ -635,20 +627,16 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
         }
         if(next_node_evaluation < current_node_best)
         {
-            //if(mv!=0)
-            //    next_node_evaluation = alpha_beta_min(-INF, beta, /*depth=*/depth+1);
             current_node_best = next_node_evaluation;
             //if(next_node_evaluation < beta)
             {
                 beta = next_node_evaluation;
-                //alpha = beta-1;
                 Encoder::principal_variation_move[depth][0] = move;
                 Encoder::principal_variation_length[depth] = 1 + Encoder::principal_variation_length[depth+1];
                 for (int j = 0; j < Encoder::principal_variation_length[depth+1]; ++j)
                     Encoder::principal_variation_move[depth][1+j] = Encoder::principal_variation_move[depth+1][j];
             }
         }
-        Move_Gen::undo_move(move, undo_info);
     }
     return current_node_best;
 }
@@ -766,7 +754,7 @@ Move find_best_move_black(int max_depth)
         if (next_eval < current_node_best)
         {
             if(i!=0)
-                next_eval = alpha_beta_min(-INF, beta, /*depth=*/1);
+                next_eval = alpha_beta_max(-INF, beta, /*depth=*/1);
             current_node_best = next_eval;
             best_move         = m;
             beta              = next_eval;  // tighten β
