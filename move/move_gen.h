@@ -2041,6 +2041,7 @@ static inline __attribute__((always_inline)) void generate_moves(int depth)
 
     //
     generate_check_mask();
+    generate_discovered_mask();
 
     // unblckable check
     if(num_attackers > 1)
