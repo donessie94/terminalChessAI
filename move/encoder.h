@@ -118,25 +118,28 @@ constexpr Bitboard CASTLE_THROUGH_MASK[2][2] = {
 
 // MOVE LAYOUT =================================================================================================================
 
-// Bit-field layout (bits 0 = LSB):
-//   0..5    ( 6 bits) to-square
-//   6..11   ( 6 bits) from-square
-//  12..14   ( 3 bits) moved piece (0=Pawn…5=King)
-//  15..17   ( 3 bits) captured piece (6=Empty)
-//  18..20   ( 3 bits) promotion piece (6=Empty)
-//  21       ( 1 bit ) FLAG_DOUBLE_PAWN
-//  22       ( 1 bit ) FLAG_CASTLE_KINGSIDE
-//  23       ( 1 bit ) FLAG_CASTLE_QUEENSIDE
-//  24       ( 1 bit ) FLAG_EN_PASSANT
-//  25..31   ( 7 bits) move-ordering score (0..127)
+/*
+    Bit-field layout (bits 0 = LSB):
+      0..5    ( 6 bits) to-square
+      6..11   ( 6 bits) from-square
+     12..14   ( 3 bits) moved piece (0=Pawn…5=King)
+     15..17   ( 3 bits) captured piece (6=Empty)
+     18..20   ( 3 bits) promotion piece (6=Empty)
+     21       ( 1 bit ) FLAG_DOUBLE_PAWN
+     22       ( 1 bit ) FLAG_CASTLE_KINGSIDE
+     23       ( 1 bit ) FLAG_CASTLE_QUEENSIDE
+     24       ( 1 bit ) FLAG_EN_PASSANT
+     25       ( 1 bit ) FLAG_CHECK
+     26..31   ( 6 bits) unused/reserved
+*/
 
 constexpr int TO_SHIFT      =  0;
 constexpr int FROM_SHIFT    =  6;
 constexpr int MOVED_SHIFT   = 12;
 constexpr int CAPT_SHIFT    = 15;
 constexpr int PROMO_SHIFT   = 18;
-constexpr int FLAGS_SHIFT   = 21;  // now 4 flags: bits 21,22,23,24
-constexpr int SCORE_SHIFT   = 25;
+constexpr int FLAGS_SHIFT   = 21;  // covers double pawn, castling, en passant
+constexpr int CHECK_SHIFT   = 25;  // check flag at bit 25
 
 constexpr uint32_t TO_MASK     = 0x3Fu << TO_SHIFT;    // bits  0..5
 constexpr uint32_t FROM_MASK   = 0x3Fu << FROM_SHIFT;  // bits  6..11
@@ -144,13 +147,14 @@ constexpr uint32_t MOVED_MASK  = 0x7u  << MOVED_SHIFT; // bits 12..14
 constexpr uint32_t CAPT_MASK   = 0x7u  << CAPT_SHIFT;  // bits 15..17
 constexpr uint32_t PROMO_MASK  = 0x7u  << PROMO_SHIFT; // bits 18..20
 constexpr uint32_t FLAGS_MASK  = 0xFu  << FLAGS_SHIFT; // bits 21..24
-constexpr uint32_t SCORE_MASK  = 0x7Fu << SCORE_SHIFT; // bits 25..31
+constexpr uint32_t CHECK_MASK  = 1u   << CHECK_SHIFT; // bit 25
 
 // Flags:
 constexpr uint32_t FLAG_DOUBLE_PAWN      = 1u << 21;
 constexpr uint32_t FLAG_CASTLE_KINGSIDE  = 1u << 22;
 constexpr uint32_t FLAG_CASTLE_QUEENSIDE = 1u << 23;
 constexpr uint32_t FLAG_EN_PASSANT       = 1u << 24;
+constexpr uint32_t FLAG_CHECK            = 1u << CHECK_SHIFT;
 
 // packer
 static inline __attribute__((always_inline)) Move construct_move(
@@ -159,16 +163,14 @@ static inline __attribute__((always_inline)) Move construct_move(
     Piece_Type moved_piece,
     Piece_Type captured_piece,  // use Empty=6 if no capture
     Piece_Type promo_piece,     // use Empty=6 if no promo
-    uint32_t  flags,            // OR any of the four FLAG_* bits
-    uint8_t   score             // 0..127 move-ordering hint
+    uint32_t  flags              // OR any of FLAG_* bits (including FLAG_CHECK)
 ) {
     return   (uint32_t(to_sq)           << TO_SHIFT)
            | (uint32_t(from_sq)         << FROM_SHIFT)
            | (uint32_t(moved_piece)     << MOVED_SHIFT)
            | (uint32_t(captured_piece)  << CAPT_SHIFT)
            | (uint32_t(promo_piece)     << PROMO_SHIFT)
-           | (flags                     & FLAGS_MASK)
-           | (uint32_t(score)           << SCORE_SHIFT);
+           | (flags                     & (FLAGS_MASK | CHECK_MASK));
 }
 
 // extractors
@@ -188,7 +190,27 @@ static inline __attribute__((always_inline)) Piece_Type move_get_promo_piece(Mov
     return Piece_Type((m & PROMO_MASK) >> PROMO_SHIFT);
 }
 static inline __attribute__((always_inline)) uint32_t move_get_flags(Move m) {
-    return m & FLAGS_MASK;
+    return (m & FLAGS_MASK);
+}
+static inline __attribute__((always_inline)) bool move_get_check(Move m) {
+    return (m & CHECK_MASK) != 0;
+}
+
+// convenience flag-checks
+static inline __attribute__((always_inline)) bool move_is_double_pawn(Move m) {
+    return (move_get_flags(m) & FLAG_DOUBLE_PAWN) != 0;
+}
+static inline __attribute__((always_inline)) bool move_is_castle_kingside(Move m) {
+    return (move_get_flags(m) & FLAG_CASTLE_KINGSIDE) != 0;
+}
+static inline __attribute__((always_inline)) bool move_is_castle_queenside(Move m) {
+    return (move_get_flags(m) & FLAG_CASTLE_QUEENSIDE) != 0;
+}
+static inline __attribute__((always_inline)) bool move_is_en_passant(Move m) {
+    return (move_get_flags(m) & FLAG_EN_PASSANT) != 0;
+}
+static inline __attribute__((always_inline)) bool move_is_check(Move m) {
+    return move_get_check(m);
 }
 
 static constexpr uint8_t PROMOTION_BONUS = 100;
@@ -292,21 +314,6 @@ uint16_t move_get_score(Move m, int depth, bool is_max)
 
     // truly quiet moves
     return 0;
-}
-
-
-// convenience flag-checks
-static inline __attribute__((always_inline)) bool move_is_double_pawn(Move m) {
-    return (move_get_flags(m) & FLAG_DOUBLE_PAWN) != 0;
-}
-static inline __attribute__((always_inline)) bool move_is_castle_kingside(Move m) {
-    return (move_get_flags(m) & FLAG_CASTLE_KINGSIDE) != 0;
-}
-static inline __attribute__((always_inline)) bool move_is_castle_queenside(Move m) {
-    return (move_get_flags(m) & FLAG_CASTLE_QUEENSIDE) != 0;
-}
-static inline __attribute__((always_inline)) bool move_is_en_passant(Move m) {
-    return (move_get_flags(m) & FLAG_EN_PASSANT) != 0;
 }
 
 // ============================================================================================================================
