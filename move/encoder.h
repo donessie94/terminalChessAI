@@ -43,46 +43,45 @@ enum Color { white, black, all_color };
 enum Piece { P, N, B, R, Q, K, p, n, b, r, q, k, e };
 
 
-// ┌─────────────┬───────────────┐
-// │ Bits 0–6    │ Bits 7–10     │
-// │ en_passant  │ castle_right  │
-// │   (0–64)    │   (KC,QC,kc,qc)│
-// └─────────────┴───────────────┘
-// Bits 11–15 unused
-using UndoPacked = uint16_t;
+// ┌──────────────────┬───────────────┐
+// │ Bits 0–6         │ Bits 7–10     │  Bits 11–15 unused
+// │ en_passant (0–64)│ castle_right  │
+// └──────────────────┴───────────────┘
+// plus a full 64-bit hash
+struct UndoPacked
+{
+    uint16_t   flags;  //  EP (7 bits) + Castle (4 bits)
+    uint64_t   hash;   //  full Zobrist hash before the move
+};
 
 namespace Encoder{
 
 // Undo ============================================================================================================
+
 // Masks & shifts
 static constexpr uint16_t EP_MASK    = 0x007F;     // 0b0000 0000 0111 1111
 static constexpr uint16_t CR_MASK    = 0x0780;     // 0b0000 0111 1000 0000
 static constexpr int      CR_SHIFT   = 7;
 
-// Pack en_passant (0–64) and castle_right (bitmask 0–15) into one word
-static inline __attribute__((always_inline)) UndoPacked pack_undo(int en_passant, int castle_right) {
-    return static_cast<UndoPacked>(
+// pack EP + castle into 16 bits
+static inline __attribute__((always_inline))
+uint16_t pack_flags(int en_passant, int castle_right) {
+    return uint16_t(
          (en_passant     & EP_MASK)
        | ((castle_right & 0xF) << CR_SHIFT)
     );
 }
 
-// Extractors
-static inline __attribute__((always_inline)) int get_en_passant(UndoPacked u) {
-    return  u & EP_MASK;
+// unpackors
+static inline __attribute__((always_inline))
+int unpack_ep(uint16_t f) {
+    return f & EP_MASK;
 }
-static inline __attribute__((always_inline)) int get_castle_right(UndoPacked u) {
-    return (u & CR_MASK) >> CR_SHIFT;
+static inline __attribute__((always_inline))
+int unpack_cr(uint16_t f) {
+    return (f & CR_MASK) >> CR_SHIFT;
 }
 
-// Mutators
-static inline __attribute__((always_inline)) void set_en_passant(UndoPacked &u, int en_passant) {
-    u = static_cast<UndoPacked>((u & ~EP_MASK) | (en_passant & EP_MASK));
-}
-static inline __attribute__((always_inline)) void set_castle_right(UndoPacked &u, int castle_right) {
-    u = static_cast<UndoPacked>((u & ~CR_MASK)
-                              | ((castle_right & 0xF) << CR_SHIFT));
-}
 // Undo ============================================================================================================
 
 extern const char *square_to_coord[65];    // coordinate strings
@@ -214,10 +213,11 @@ static inline __attribute__((always_inline)) bool move_is_check(Move m) {
 }
 
 static constexpr uint8_t PROMOTION_BONUS = 100;
-static constexpr uint8_t KILLER1_BONUS = 60;
-static constexpr uint8_t KILLER2_BONUS = 50;
+static constexpr uint16_t KILLER1_BONUS = 60;
+static constexpr uint16_t KILLER2_BONUS = 50;
 static constexpr uint8_t HISTORY_BONUS = 2;
-static constexpr uint16_t PV_BONUS = 1000;
+static constexpr uint16_t PV_BONUS = 2000;
+static constexpr uint16_t CHECK_BONUS = 40;
 
 // for storing historic moves (64x64 cuz from_squ -> to_sq)
 // we want to index a move but obviously having something like
@@ -268,11 +268,15 @@ uint16_t move_get_score(Move m, int depth, bool is_max)
     if (m == principal_variation_move[0][depth])
         return PV_BONUS;
 
+    //uint16_t check_bon = 0;
+    //if(move_is_check(m)) return 20;
+        //check_bon+=CHECK_BONUS;
+
     // MVV/LVA captures
     if (victim != Empty
      && attacker < King)    // attacker in [Pawn..Queen]
     {
-        return Tables::MVV_LVA[int(attacker)][int(victim)];
+        return Tables::MVV_LVA[int(attacker)][int(victim)];// + (check_bon);
     }
 
     // promotions
@@ -312,9 +316,112 @@ uint16_t move_get_score(Move m, int depth, bool is_max)
     //   return hist;
     // }
 
-    // truly quiet moves
-    return 0;
+    //
+    // if(move_get_moved_piece(m) != Pawn)
+    // {
+    //     int from_sq = Encoder::move_get_from(m);  // 0..63
+    //     int to_sq   = Encoder::move_get_to(m);    // 0..63
+    //     int score = 0;
+
+    //     int from_r = from_sq >> 3;   // 0 = rank 8, 1 = rank 7, …, 7 = rank 1
+    //     int to_r   = to_sq   >> 3;
+
+    //     // white moves “forward” when it goes toward bigger ranks
+    //     // black moves “forward” when it goes toward smaller ranks
+    //     int forward = ((!is_max && to_r > from_r)
+    //                 | ( is_max && to_r < from_r));  // 0 or 1
+    //     int mask    = -forward;                      // 0x00000000 or 0xFFFFFFFF
+    //     score += mask & 10;
+
+    //     // truly quiet moves
+    //     return score+2;//check_bon;
+    // }
+
+
+    // if(attacker == Pawn) return 4;
+    // else if(attacker == Knight) return 5;
+    // else if(attacker == Bishop) return 6;
+    // else if(attacker == Rook) return 3;
+    // else if(attacker == Queen) return 7;
+
+    //if(attacker == Queen) return 7;
+    if(attacker == King) return 0;
+
+    return 2;
 }
+
+
+// BRANCHLESS ======================================
+// static inline __attribute__((always_inline))
+// int move_get_score(Move m, bool is_max, int depth) {
+//     using namespace Encoder;
+
+//     // extract all our “selectors”
+//     Piece_Type attacker = move_get_moved_piece(m);
+//     Piece_Type victim   = move_get_captured_piece(m);
+//     Piece_Type promo    = move_get_promo_piece(m);
+
+//     // previous PV-move and killers at this depth
+//     Move     pv = principal_variation_move[0][depth];
+//     Move     k1 = is_max ? max_killer[0][depth] : min_killer[0][depth];
+//     Move     k2 = is_max ? max_killer[1][depth] : min_killer[1][depth];
+
+//     // compute boolean flags (0 or 1)
+//     uint32_t isPV      = (m == pv);
+//     uint32_t isCap     = (victim != Empty) & (attacker < King);
+//     uint32_t isPromQ   = (promo == Queen);
+//     uint32_t isPromR   = (promo == Rook);
+//     uint32_t isPromB   = (promo == Bishop);
+//     uint32_t isPromN   = (promo == Knight);
+//     uint32_t isKiller1 = (m == k1);
+//     uint32_t isKiller2 = (m == k2);
+
+//     // turn them into all-ones or all-zeros masks
+//     uint32_t M_PV    = -isPV;      // 0xFFFFFFFF if PV, else 0
+//     uint32_t M_CAP   = -isCap;     // ...
+//     uint32_t M_PROMQ = -isPromQ;
+//     uint32_t M_PROMR = -isPromR;
+//     uint32_t M_PROMB = -isPromB;
+//     uint32_t M_PROMN = -isPromN;
+//     uint32_t M_K1    = -isKiller1;
+//     uint32_t M_K2    = -isKiller2;
+
+//     // ensure mutual exclusion in priority order:
+//     //   PV > CAPTURE > PROMOTION > KILLER1 > KILLER2 > 0
+//     uint32_t used = 0;
+//     uint32_t maskPV    =  M_PV;                       used |= maskPV;
+//     uint32_t maskCap   = (M_CAP  & ~used);            used |= maskCap;
+//     uint32_t maskPromQ = (M_PROMQ& ~used);            used |= maskPromQ;
+//     uint32_t maskPromR = (M_PROMR& ~used);            used |= maskPromR;
+//     uint32_t maskPromB = (M_PROMB& ~used);            used |= maskPromB;
+//     uint32_t maskPromN = (M_PROMN& ~used);            used |= maskPromN;
+//     uint32_t maskK1    = (M_K1   & ~used);            used |= maskK1;
+//     uint32_t maskK2    = (M_K2   & ~used);            used |= maskK2;
+//     // anything left (used==0) falls through to zero
+
+//     // now compute each category’s value
+//     uint32_t vPV    = PV_BONUS;
+//     uint32_t vCap   = Tables::MVV_LVA[int(attacker)][int(victim)];
+//     uint32_t vPromQ = PROMOTION_BONUS +   0;
+//     uint32_t vPromR = PROMOTION_BONUS -  10;
+//     uint32_t vPromB = PROMOTION_BONUS -  20;
+//     uint32_t vPromN = PROMOTION_BONUS -  30;
+//     uint32_t vK1    = KILLER1_BONUS;
+//     uint32_t vK2    = KILLER2_BONUS;
+
+//     // pick exactly one by masking and OR’ing
+//     return  (maskPV    & vPV)
+//           | (maskCap   & vCap)
+//           | (maskPromQ & vPromQ)
+//           | (maskPromR & vPromR)
+//           | (maskPromB & vPromB)
+//           | (maskPromN & vPromN)
+//           | (maskK1    & vK1)
+//           | (maskK2    & vK2);
+// }
+
+
+
 
 // ============================================================================================================================
 

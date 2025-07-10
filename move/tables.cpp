@@ -24,6 +24,9 @@ Bitboard orthogonal_ray_mask[64];
 //
 Bitboard between_squares_mask[64][64];
 
+uint64_t zobrist_piece[12][64];
+uint64_t zobrist_aux[ZOB_AUX_COUNT];
+
 void initialize_precomputed_tables()
 {
     //
@@ -37,6 +40,7 @@ void initialize_precomputed_tables()
     compute_bishop_attack_table();
     compute_rook_attack_table();
     build_king_zones();
+    init_zobrist();
 }
 
 // ALL COMBINATIONS OF SIZE N ======================================================================================
@@ -921,6 +925,34 @@ void compute_between_squares_mask()
             }
         }
     }
+}
+
+uint64_t splitmix64(uint64_t &x)
+{
+  // increment the state by a “golden‐ratio” constant
+  uint64_t z = (x += 0x9e3779b97f4a7c15ULL);
+
+  // avalanche bits with xor–shift–multiply
+  z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+
+  // final xor–shift to produce the output
+  return z ^ (z >> 31);
+}
+
+void init_zobrist()
+{
+  uint64_t seed = 0x12345678abcdefULL;
+
+  // Generate piece‐square keys
+  for (int p = 0; p < 12; p++)            // 12 piece types (wP,wN,…,bK)
+    for (int sq = 0; sq < 64; sq++)       // 64 board squares
+      zobrist_piece[p][sq] = splitmix64(seed);
+
+  // Generate auxiliary keys
+  //    They cover things like side‐to‐move, castling rights, en-passant files
+  for (int i = 0; i < 13; i++)
+    zobrist_aux[i] = splitmix64(seed);
 }
 
 } // end Tables namespace

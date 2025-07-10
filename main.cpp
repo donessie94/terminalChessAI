@@ -14,9 +14,19 @@ int main()
 
     UCI::on_go("");
 
+    // using namespace std::chrono;
+    // auto t0 = steady_clock::now();
+    // Search::perft_test(0);
+    // auto t1 = steady_clock::now();
+    // auto dt = duration_cast<milliseconds>(t1 - t0).count();
+    // std::cout << "nodes " << Search::node_count << "\n";
+    // std::cout << "prunes " << Search::prune_count << "\n";
+    // printf("Search time: %lld ms\n", (long long)dt);
+    // printf("Nodes per milisecond: %llu", (Search::node_count / dt));
+
     //===
 
-    //UCI::uci_loop();
+    // UCI::uci_loop();
 
     return 0;
 }

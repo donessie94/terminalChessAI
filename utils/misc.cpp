@@ -191,6 +191,42 @@ void parse_fen_str(const char fen[], Bitboard player_occ_bb[3], Bitboard piece_o
 
     //printf("En-Passant: %s\n", square_to_coord[idx]);
     en_passant = idx;
+
+    // Zobrist Hashing initial set up =========================================================================================
+
+    // PIECES
+    for(int sq=0; sq<64; sq++)
+    {
+        Piece_Type w_piece = Move_Gen::mailbox[white][sq];
+        Piece_Type b_piece = Move_Gen::mailbox[black][sq];
+
+        // if this square is not empty (in the mailbox)
+        if(w_piece != Empty)
+            Move_Gen::position_hash ^= Tables::zobrist_piece[w_piece][sq];
+
+        // black
+        else if(b_piece != Empty)
+            Move_Gen::position_hash ^= Tables::zobrist_piece[b_piece][sq];
+    }
+
+    // AUXILIARS
+    // side to move
+    if (Move_Gen::turn == white)                            Move_Gen::position_hash ^= Tables::zobrist_aux[ZOB_SIDE_TO_MOVE];
+    // castle rights
+    if (Move_Gen::castle_right & Castle_Right::KC)          Move_Gen::position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_WK];
+    if (Move_Gen::castle_right & Castle_Right::QC)          Move_Gen::position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_WQ];
+    if (Move_Gen::castle_right & Castle_Right::kc)          Move_Gen::position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_BK];
+    if (Move_Gen::castle_right & Castle_Right::qc)          Move_Gen::position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_BQ];
+    // enpassant
+    if(en_passant != no_sqr)
+    {
+        // infer file 0..7 from the square index
+        int ep_file = en_passant & 7;  // since a1=0,…,h1=7,a2=8…h8=63
+        // XOR in the corresponding ZobristAux slot
+        Move_Gen::position_hash ^= Tables::zobrist_aux[ZOB_EP_FILE_A + ep_file];
+    }
+
+    // ========================================================================================================================
 }
 
 void print_mini_board(Bitboard player_occ_bb[3], Bitboard piece_occ_bb[2][6], bool turn, int castle_right, int en_passant)

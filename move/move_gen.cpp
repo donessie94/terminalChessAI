@@ -20,6 +20,8 @@ int en_passant;
 bool turn;
 Bitboard piece_occ_bb[2][6];
 Bitboard player_occ_bb[3];
+TTEntry   TT[TT_SIZE];
+uint64_t position_hash;
 // ============================================================================================================================================================
 
 

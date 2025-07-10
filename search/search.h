@@ -132,7 +132,11 @@ constexpr const int infinity[2] = { INF, -INF };
 unsigned long long node_count;
 unsigned long long prune_count;
 int pos_eval;
-constexpr const int PRESSURE_WEIGHT = 5;
+constexpr const int PRESSURE_WEIGHT     = 8;
+constexpr const int DPEN                = 32;  // penalty per doubled pawn
+constexpr const int TPEN                = 64;  // penalty per tripled pawn
+constexpr const int IPEN                = 32;
+constexpr const int BISHOP_PAIR_BONUS   = 50;
 
 // wait i am missing here covers of the check or king evasions too because else an attack
 // could be not explored (since it will stop middle attack when enemy cant capture or check back)
@@ -372,79 +376,146 @@ static inline __attribute__((always_inline)) int quiescence_min(int alpha, int b
     return current_node_best;
 }
 
+// static_evaluation: Combines tactical and positional factors into a single centipawn score.
+//   is_max: true if evaluating for the side to move in Max nodes, false for Min.
+//   depth:  current search depth (used to adjust mate scores for proximity).
+// how many attacking pieces (initial idea pieces that are not in starting ranks 12)
+// more bigger pieces is better than better pawn structure or 3 pawns almsot alwasy worse than a knight or bishop
 static inline __attribute__((always_inline))
 int static_evaluation(bool is_max, int depth) {
     using namespace Move_Gen;
 
-    // --- detect mate/stalemate ---
+    // --- 1) Detect checkmate or stalemate ---
+    // generate_moves populates move_list and sets num_attackers if in check.
     generate_moves(depth);
-    if (num_attackers > 0 && move_list[depth].count == 0)
-    {
-        //printf("checkmate dept: %d\n", depth);
-        // NOTE: without -depth we would treat all mates equal, so does not matter which we go for it
-        // and we most likely will end up chasing different mates each times we do a new search, wich will
-        // end up not mating the opponent at all cuz each time is looking for a new mate line instead of sticking to one
+    // If in check and no legal moves → checkmate. Closer mate (smaller depth) is better.
+    if (num_attackers > 0 && move_list[depth].count == 0) {
+        // For Max nodes, being checkmated is worst: return -(infinity-depth).
+        // For Min nodes, inverse sign: return +(infinity-depth).
         int sign = is_max ? -1 : +1;
         return sign * (infinity[is_max] - depth);
     }
-
+    // If not in check and no moves → stalemate (draw = 0 score).
     if (num_attackers == 0 && move_list[depth].count == 0)
         return 0;
 
-    // --- pinned-piece masks ---
-    //generate_pin_mask();                 // fills pin_mask for side-to-move’s king
-    // what about checks? i need to account that somehwo tho, because no checks maye have no pins but be worse position
+    // --- 2) Compute pinned-piece masks ---
+    // pin_mask currently contains bits for pieces pinned to our king.
     Bitboard my_pin_mask = pin_mask;
-
-    generate_opposite_king_mask();       // now fills pin_mask for the *other* king
+    // Now generate pin mask for the opponent by toggling side-to-move.
+    generate_opposite_king_mask();
     Bitboard opp_pin_mask = pin_mask;
 
-    // --- material + PST (White minus Black) ---
+    // --- 3) Material + Piece-Square Table (PST) ---
+    // raw accumulates White minus Black material/PST score.
     int raw = 0;
     for (int pt = Pawn; pt <= King; ++pt) {
-        for (Bitboard w = piece_occ_bb[white][pt]; w; w &= w-1) {
+        // Iterate all White pieces of type pt via bitboard scan.
+        for (Bitboard w = piece_occ_bb[white][pt]; w; w &= w - 1) {
             int sq = LS1B_IDX(w);
+            // Add base value + positional bonus from PST
             raw += Tables::PIECE_VALUE[pt] + Tables::PST[pt][sq];
         }
-        for (Bitboard b = piece_occ_bb[black][pt]; b; b &= b-1) {
+        // Iterate Black pieces similarly, subtracting their contributions.
+        for (Bitboard b = piece_occ_bb[black][pt]; b; b &= b - 1) {
             int sq = LS1B_IDX(b);
+            // Mirror square for Black PST indexing
             raw -= Tables::PIECE_VALUE[pt]
-                 + Tables::PST[pt][ Tables::mirror_square(sq) ];
+                 + Tables::PST[pt][Tables::mirror_square(sq)];
         }
     }
 
-    // --- pinned-piece penalty (enemy pins minus my pins) ---
-    raw += 20 * (COUNT_BITS(opp_pin_mask) - COUNT_BITS(my_pin_mask));
+    // --- 4) Pawn-structure penalties: doubled, tripled, and isolated pawns ---
+    // DPEN: penalty for each extra pawn on the same file beyond the first
+    // TPEN: additional penalty when a third pawn appears on a file
+    // IPEN: penalty for any pawn with no friendly pawn on adjacent files
 
-    // --- build occupancy ---
+    // 4a) Count doubled & tripled pawns
+    int w_doub = 0, w_trip = 0;
+    Bitboard wp = piece_occ_bb[white][Pawn];
+    for (int f = 0; f < 8; ++f) {
+        // Extract only the pawns on file f
+        Bitboard onf = wp & Tables::FILE_MASK[f];
+        int cnt = COUNT_BITS(onf);  // number of pawns on this file
+        // If there are 2, one is 'doubled'; if 3, two are 'doubled' and one is 'tripled'
+        if (cnt >= 2) w_doub += cnt - 1;
+        if (cnt >= 3) w_trip += cnt - 2;
+    }
+    int b_doub = 0, b_trip = 0;
+    Bitboard bp = piece_occ_bb[black][Pawn];
+    for (int f = 0; f < 8; ++f) {
+        Bitboard onf = bp & Tables::FILE_MASK[f];
+        int cnt = COUNT_BITS(onf);
+        if (cnt >= 2) b_doub += cnt - 1;
+        if (cnt >= 3) b_trip += cnt - 2;
+    }
+    // Apply White's penalties by subtracting from raw (raw = W - B)
+    raw -= DPEN * w_doub + TPEN * w_trip;
+    // Apply Black's penalties by adding
+    raw += DPEN * b_doub + TPEN * b_trip;
+
+    // 4b) Count isolated pawns (no friendly pawn on adjacent file)
+    auto isolated_mask = [&](Bitboard pawn_bb) {
+        // Shift east: only pawns not on H-file, then <<1
+        Bitboard east = (pawn_bb & ~Tables::FILE_MASK[7]) << 1;
+        // Shift west: only pawns not on A-file, then >>1
+        Bitboard west = (pawn_bb & ~Tables::FILE_MASK[0]) >> 1;
+        // Pawns with a neighbor on file-adjacent are 'defended'
+        Bitboard defended = east | west;
+        // Isolated pawns = all pawns minus defended
+        return pawn_bb & ~defended;
+    };
+    int w_iso = COUNT_BITS(isolated_mask(wp));
+    int b_iso = COUNT_BITS(isolated_mask(bp));
+    raw -= IPEN * w_iso;
+    raw += IPEN * b_iso;
+
+    // --- 5) Pinned-piece penalty ---
+    // Penalize difference in number of pinned pieces: enemy pins minus our pins
+    raw += 16 * (COUNT_BITS(opp_pin_mask) - COUNT_BITS(my_pin_mask));
+
+    // --- 6) Space evaluation ---
+    // Compute occupancy once, then masked attack bitboards
     Bitboard occ = player_occ_bb[all_color];
-
-    // --- space ---
     Bitboard w_space = compute_attack_mask(white, occ) & ~player_occ_bb[white];
     Bitboard b_space = compute_attack_mask(black, occ) & ~player_occ_bb[black];
+    // Global space difference
+    raw += 2*(COUNT_BITS(w_space) - COUNT_BITS(b_space));
+    // Territory control: how many squares in enemy half are attacked
+    raw += 2*(COUNT_BITS(w_space & BLACK_TERRITORY)
+          - COUNT_BITS(b_space & WHITE_TERRITORY));
 
-    // --- global raw space score ---
-    raw += (1 * (COUNT_BITS(w_space) - COUNT_BITS(b_space)));
-
-    // how many of Black’s squares does White control?
-    int w_terr_ctrl = COUNT_BITS(w_space & BLACK_TERRITORY);
-
-    // how many of White’s squares does Black control?
-    int b_terr_ctrl = COUNT_BITS(b_space & WHITE_TERRITORY);
-
-    // and evaluate how many enemy territory squares we control
-    raw += 1 * (w_terr_ctrl - b_terr_ctrl);
-
-    // not super happy still in how this works tho, i would like to make sure. know the single square 2, 3 pieces attack
+    // --- 7) King pressure ---
+    // zone_pressure measures cumulative attackers around a king square
     int w_pressure = zone_pressure(white, king_position[black], occ);
     int b_pressure = zone_pressure(black, king_position[white], occ);
+    raw += PRESSURE_WEIGHT * (w_pressure - b_pressure);
 
-    raw += (PRESSURE_WEIGHT*(w_pressure - b_pressure));
+    // White bishop‐pair
+    int w_bish = COUNT_BITS(piece_occ_bb[white][Bishop]);
+    if (w_bish >= 2)
+        raw += BISHOP_PAIR_BONUS;
 
-    //printf("Depth: %d\n", depth);
+    // Black bishop‐pair
+    int b_bish = COUNT_BITS(piece_occ_bb[black][Bishop]);
+    if (b_bish >= 2)
+        raw -= BISHOP_PAIR_BONUS;
 
+    // // Count White’s minor pieces (Knights + Bishops)
+    // Bitboard w_minors_bb = piece_occ_bb[white][Knight] | piece_occ_bb[white][Bishop];
+    // int w_minors = COUNT_BITS(w_minors_bb);
+
+    // // Count Black’s minor pieces
+    // Bitboard b_minors_bb = piece_occ_bb[black][Knight] | piece_occ_bb[black][Bishop];
+    // int b_minors = COUNT_BITS(b_minors_bb);
+
+    // int minor_diff = (w_minors - b_minors) * 32;
+    // raw += minor_diff;  // positive favors White, negative favors Black
+
+    // Return final centipawn evaluation: positive = White better, negative = Black better
     return raw;
 }
+
 
 // counts all final leafs at a given depth
 static inline __attribute__((always_inline)) void perft_test(int depth)
@@ -478,9 +549,9 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
     // break rule when we reach max depth
     if(depth == search_depth)
     {
-        return quiescence_max(alpha, beta, depth);
-        // node_count++;
-        // return static_evaluation(1, depth);
+        //return quiescence_max(alpha, beta, depth);
+        node_count++;
+        return static_evaluation(1, depth);
     }
 
 
@@ -597,9 +668,9 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
 {
     if(depth == search_depth)
     {
-        return quiescence_min(alpha, beta, depth);
-        // node_count++;
-        // return static_evaluation(0, depth);
+        //return quiescence_min(alpha, beta, depth);
+        node_count++;
+        return static_evaluation(0, depth);
     }
     Move_Gen::generate_moves(depth);
 
@@ -659,12 +730,18 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
 
 // Define your pawn unit once:
 static constexpr int DELTA = 1;
+unsigned long long re_search_count;
+unsigned long long probe_fail_high = 0, probe_fail_low = 0;
 
-static inline __attribute__((always_inline))
-int pvs_max(int alpha, int beta, int depth)
+static inline __attribute__((always_inline)) int pvs_max(int alpha, int beta, int depth)
 {
     if (depth == search_depth)
+    {
         return quiescence_max(alpha, beta, depth);
+        // node_count++;
+        // return static_evaluation(1, depth);
+    }
+
 
     Move_Gen::generate_moves(depth);
     if (Move_Gen::move_list[depth].count == 0)
@@ -673,32 +750,40 @@ int pvs_max(int alpha, int beta, int depth)
     Move_Gen::sort_moves_by_score(depth);
     int best = alpha;
 
-    for (int i = 0; i < Move_Gen::move_list[depth].count; ++i)
-    {
+    for (int i = 0; i < Move_Gen::move_list[depth].count; ++i) {
         Move m = Move_Gen::move_list[depth].moves[i];
         UndoPacked undo = Move_Gen::do_move(m);
 
         int score;
         if (i == 0) {
-            // First move: full window
+            // first move = full window
             score = pvs_min(alpha, beta, depth + 1);
         } else {
-            // Null-window probe of width one pawn
+            // 1) null-window probe
             score = pvs_min(alpha, alpha + DELTA, depth + 1);
 
-            // True fail-high if we improved by at least one pawn but didn't cutoff
-            if (score > alpha && score < beta) {
-                score = pvs_min(score, beta, depth + 1);
+            // 2) fail-high: if probe ≥ beta, undo & cutoff immediately
+            if (score >= beta) {
+                probe_fail_high++;
+                Move_Gen::undo_move(m, undo);
+                prune_count++;
+                return score;
+            }
+
+            // 3) re-search full if it might beat alpha
+            if (score > alpha) {
+                re_search_count++;
+                score = pvs_min(alpha, beta, depth + 1);
             }
         }
 
         Move_Gen::undo_move(m, undo);
 
-        // Immediate beta-cutoff
+        // immediate β-cutoff
         if (score >= beta) {
-            // killer
             if (Encoder::move_get_captured_piece(m) == Empty &&
                 Encoder::move_get_promo_piece(m)     == Empty &&
+                //!Encoder::move_is_check(m) &&
                 m != Encoder::max_killer[0][depth])
             {
                 Encoder::max_killer[1][depth] = Encoder::max_killer[0][depth];
@@ -708,7 +793,7 @@ int pvs_max(int alpha, int beta, int depth)
             return score;
         }
 
-        // Alpha/PV update
+        // α / PV update
         if (score > best) {
             best = score;
             if (score > alpha) {
@@ -718,7 +803,7 @@ int pvs_max(int alpha, int beta, int depth)
                 int tail = Encoder::principal_variation_length[depth + 1];
                 Encoder::principal_variation_length[depth] = 1 + tail;
                 for (int j = 0; j < tail; ++j)
-                    Encoder::principal_variation_move[depth][j + 1] =
+                    Encoder::principal_variation_move[depth][j+1] =
                         Encoder::principal_variation_move[depth + 1][j];
             }
         }
@@ -727,11 +812,15 @@ int pvs_max(int alpha, int beta, int depth)
     return best;
 }
 
-static inline __attribute__((always_inline))
-int pvs_min(int alpha, int beta, int depth)
+static inline __attribute__((always_inline)) int pvs_min(int alpha, int beta, int depth)
 {
     if (depth == search_depth)
+    {
         return quiescence_min(alpha, beta, depth);
+        // node_count++;
+        // return static_evaluation(0, depth);
+    }
+
 
     Move_Gen::generate_moves(depth);
     if (Move_Gen::move_list[depth].count == 0)
@@ -740,32 +829,40 @@ int pvs_min(int alpha, int beta, int depth)
     Move_Gen::sort_moves_by_score(depth);
     int best = beta;
 
-    for (int i = 0; i < Move_Gen::move_list[depth].count; ++i)
-    {
+    for (int i = 0; i < Move_Gen::move_list[depth].count; ++i) {
         Move m = Move_Gen::move_list[depth].moves[i];
         UndoPacked undo = Move_Gen::do_move(m);
 
         int score;
         if (i == 0) {
-            // First move: full window
+            // first move = full window
             score = pvs_max(alpha, beta, depth + 1);
         } else {
-            // Null-window probe of width one pawn
+            // 1) null-window probe
             score = pvs_max(beta - DELTA, beta, depth + 1);
 
-            // True fail-low if we worsened by at least one pawn but didn't cutoff
-            if (score < beta && score > alpha) {
-                score = pvs_max(alpha, score, depth + 1);
+            // 2) fail-low: if probe ≤ alpha, undo & cutoff immediately
+            if (score <= alpha) {
+                probe_fail_low++;
+                Move_Gen::undo_move(m, undo);
+                prune_count++;
+                return score;
+            }
+
+            // 3) re-search full if it might beat beta
+            if (score < beta) {
+                re_search_count++;
+                score = pvs_max(alpha, beta, depth + 1);
             }
         }
 
         Move_Gen::undo_move(m, undo);
 
-        // Immediate alpha-cutoff
+        // immediate α-cutoff
         if (score <= alpha) {
-            // killer
             if (Encoder::move_get_captured_piece(m) == Empty &&
                 Encoder::move_get_promo_piece(m)     == Empty &&
+                //!Encoder::move_is_check(m) &&
                 m != Encoder::min_killer[0][depth])
             {
                 Encoder::min_killer[1][depth] = Encoder::min_killer[0][depth];
@@ -775,7 +872,7 @@ int pvs_min(int alpha, int beta, int depth)
             return score;
         }
 
-        // Beta/PV update
+        // β / PV update
         if (score < best) {
             best = score;
             if (score < beta) {
@@ -785,7 +882,7 @@ int pvs_min(int alpha, int beta, int depth)
                 int tail = Encoder::principal_variation_length[depth + 1];
                 Encoder::principal_variation_length[depth] = 1 + tail;
                 for (int j = 0; j < tail; ++j)
-                    Encoder::principal_variation_move[depth][j + 1] =
+                    Encoder::principal_variation_move[depth][j+1] =
                         Encoder::principal_variation_move[depth + 1][j];
             }
         }
@@ -793,6 +890,7 @@ int pvs_min(int alpha, int beta, int depth)
 
     return best;
 }
+
 
 
 static inline __attribute__((always_inline))
@@ -845,9 +943,9 @@ Move find_best_move_white(int max_depth)
             // our probe searched proved us wrong, we found a better possible move so we research fully for the exact evaluation of this line of play
             if(i!=0)
             {
-                //next_eval = alpha_beta_min(alpha,  INF, /*depth=*/1);
+                // next_eval = alpha_beta_min(alpha,  INF, /*depth=*/1);
+                re_search_count++;
                 next_eval = pvs_min(alpha,  INF, /*depth=*/1);
-                //printf("yeeeey\n");
             }
 
 
@@ -915,8 +1013,11 @@ Move find_best_move_black(int max_depth)
         if (next_eval < current_node_best)
         {
             if(i!=0)
+            {
                 //next_eval = alpha_beta_max(-INF, beta, /*depth=*/1);
                 next_eval = pvs_max(-INF, beta, /*depth=*/1);
+                re_search_count++;
+            }
             current_node_best = next_eval;
             best_move         = m;
             beta              = next_eval;  // tighten β
@@ -942,13 +1043,17 @@ Move iterative_deepen(bool white_to_move, int max_depth)
     std::memset(Encoder::min_killer, 0, sizeof(Encoder::min_killer));
     Move best = 0;
     for (int d = 1; d <= max_depth; ++d) {
-        node_count=0;
+        node_count = 0;
+        re_search_count = 0;
+        probe_fail_high = 0; probe_fail_low = 0;
         if (white_to_move) {
             best = find_best_move_white(d);
         } else {
             best = find_best_move_black(d);
         }
-        printf("Depth: %d, Node Count: %llu\n", d, node_count);
+        printf("Depth: %d, Node Count: %llu, Re-Search Count: %llu (%.1f%%) ", d, node_count, re_search_count, 100.0 * re_search_count / (node_count + 1));
+        printf("Probe cutoffs: fail-high=%llu, fail-low=%llu\n",
+       probe_fail_high, probe_fail_low);
     }
     return best;
 }

@@ -67,6 +67,29 @@ using Bitboard = uint64_t;
 #define GET_KING_ATTACK(sq) \
     ( Tables::king_attack_bb[(sq)] )
 
+// Aux indices for ZobristAux[13]
+enum ZobristAuxIndex : int {
+    ZOB_SIDE_TO_MOVE = 0,    // XOR when side to move flips
+
+    // en‐passant file flags (only one can be active at a time) so no active one means -> no enpassantn available
+    ZOB_EP_FILE_A,           // 1
+    ZOB_EP_FILE_B,           // 2
+    ZOB_EP_FILE_C,           // 3
+    ZOB_EP_FILE_D,           // 4
+    ZOB_EP_FILE_E,           // 5
+    ZOB_EP_FILE_F,           // 6
+    ZOB_EP_FILE_G,           // 7
+    ZOB_EP_FILE_H,           // 8
+
+    // castling‐rights flags
+    ZOB_CASTLE_WK,           // White may castle king-side
+    ZOB_CASTLE_WQ,           // White may castle queen-side
+    ZOB_CASTLE_BK,           // Black may castle king-side
+    ZOB_CASTLE_BQ,           // Black may castle queen-side
+
+    ZOB_AUX_COUNT            // = 13, handy for sizing the array
+};
+
 namespace Tables{
 
 
@@ -136,6 +159,18 @@ constexpr Bitboard not_ab_file = 18229723555195321596ULL;
 //   hex:    0xFCFCFCFCFCFCFCFCULL
 //   decimal: 18229723555195321596ULL
 
+// File masks: FILE_MASK[0] = file A, FILE_MASK[1] = file B, … FILE_MASK[7] = file H
+static constexpr uint64_t FILE_MASK[8] = {
+    0x0101010101010101ULL,  // A-file: a8,a7,…,a1
+    0x0202020202020202ULL,  // B-file: b8,b7,…,b1
+    0x0404040404040404ULL,  // C-file
+    0x0808080808080808ULL,  // D-file
+    0x1010101010101010ULL,  // E-file
+    0x2020202020202020ULL,  // F-file
+    0x4040404040404040ULL,  // G-file
+    0x8080808080808080ULL   // H-file
+};
+
 static const int PIECE_VALUE[6] =
 {
   100, 300, 350, 500, 900, 0
@@ -153,12 +188,12 @@ static const int PST[6][64] = {
     // Pawn
     {
        0,   0,   0,   0,   0,   0,   0,   0,
-      40,  80,  80,  70,  70,  80,  80,  40,
-       5,   5,  10,  25,  25,  10,   5,   5,
-       5,   5,  10,  25,  25,  10,   5,   5,
-       5,   5,  10,  25,  25,  10,   5,   5,
-      10,  10,  20,  10,  10,  20,  10,  10,
-      40,  40,  40, -25, -25,  40,  40,  40,
+      50,  80,  80,  70,  70,  80,  80,  50,
+      45,  45,  45,  45,  45,  45,  45,  45,
+      35,  35,  35,  35,  35,  35,  35,  35,
+      19,  19,  19,  30,  30,  19,  19,  19,
+      19,  19,  20,  10,  10,  20,  19,  19,
+      20,  20,  20, -25, -25,  20,  20,  20,
        0,   0,   0,   0,   0,   0,   0,   0
     },
     // Knight
@@ -314,6 +349,19 @@ void compute_rook_attack_table();
 // given blockers in `relevant_occupancy_bb`.
 Bitboard compute_bishop_attack_bb(Bitboard relevant_occupancy_bb, int sq);
 Bitboard compute_rook_attack_bb(Bitboard relevant_occupancy_bb, int sq);
+
+// ZOBRIST HASHING ============================================================================================================
+
+extern uint64_t zobrist_piece[12][64];
+extern uint64_t zobrist_aux[ZOB_AUX_COUNT];
+
+// very fast, high-quality 64-bit pseudo-random generator (good enough for Zobrist keys)
+uint64_t splitmix64(uint64_t &x);
+
+// give each one of our table entries a unique random number
+void init_zobrist();
+
+// ============================================================================================================================
 
 } // end of Tables namespace
 } // end of RedStone namespace

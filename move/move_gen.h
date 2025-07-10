@@ -127,7 +127,46 @@ extern int num_attackers;
 extern Bitboard piece_occ_bb[2][6];     // [side][piece_type]
 extern Bitboard player_occ_bb[3];       // [WHITE=0], [BLACK=1], [ALL=2]
 extern Piece_Type mailbox[2][64];
+
 // =========================================================================================================================================================
+
+// TRANSPOSITION TABLE =============================================================================================
+
+//------------------------------------------------------------------------------
+// 1) The entry “flags” tell us whether the stored score is an exact value, a
+//    lower bound (β cutoff), or an upper bound (α cutoff).
+//------------------------------------------------------------------------------
+enum class Bound : uint8_t {
+    EXACT,      // exact score (true minimax value was computed, no prunes, seacrh all the way to depth)
+    LOWER,      // score ≥ storedScore  (beta cutoff)
+    UPPER       // score ≤ storedScore  (alpha cutoff)
+};
+
+//------------------------------------------------------------------------------
+// 2) Each bucket holds one TT entry.  The best move from this position is found here,
+//    the evaluation or cutoff score, the depth-at-which it was searched.
+//------------------------------------------------------------------------------
+struct TTEntry {
+    uint64_t    key;        // full Zobrist key (64-bit)
+    Move        bestMove;   // best move from this position
+    int16_t     score;      // score from the search
+    int8_t      depth;      // search depth at which score was computed
+    Bound       flag;       // exact / lower / upper bound
+    uint8_t     age;        // for aging out old entries
+};
+
+//------------------------------------------------------------------------------
+// 3) The table itself is just a power-of-two array of buckets.  We mask the
+//    Zobrist key to pick an index.
+//------------------------------------------------------------------------------
+static constexpr size_t TT_SIZE = 1 << 24;        // ~16M entries, 512 mib or so, we can push 1<<27 (4 gigas) for test or locally play
+static constexpr size_t TT_MASK = TT_SIZE - 1;
+extern TTEntry   TT[TT_SIZE];
+
+// unique number identifying a position
+extern uint64_t position_hash;
+
+// ==================================================================================================================
 
 // clear past pin_mask and pin_ray_mask and generate the new ones for the current position
 static inline __attribute__((always_inline)) void generate_pin_mask()
@@ -1227,6 +1266,383 @@ static inline __attribute__((always_inline)) void generate_queen_moves(int depth
 }
 
 
+
+
+
+
+
+
+
+
+
+// CHECK ===========
+// static inline __attribute__((always_inline)) void generate_knight_moves(int depth) {
+//     Move_List &ML = move_list[depth];
+//     Move* buf = ML.moves;
+//     int& cnt = ML.count;
+//     Bitboard knights = piece_occ_bb[turn][Knight];
+//     Bitboard opp_occ = player_occ_bb[!turn];
+//     Bitboard all_occ = player_occ_bb[all_color];
+//     Bitboard king_bb = 1ULL << king_position[!turn];
+//     while (knights) {
+//         int from = LS1B_IDX(knights);
+//         knights &= knights - 1;
+//         Bitboard from_bb = 1ULL << from;
+//         Bitboard moves = GET_KNIGHT_ATTACK(from) & (opp_occ | ~all_occ);
+//         while (moves) {
+//             int to = LS1B_IDX(moves);
+//             moves &= moves - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             // ok = 1 if legal (not pinned or still along pin ray), else 0
+//             uint32_t ok = !((pin_mask & from_bb) && !(pin_ray_mask[from] & to_bb));
+
+//             // direct = 1 if knight at 'to' would check king
+//             uint32_t direct = !!(GET_KNIGHT_ATTACK(to) & king_bb);
+
+//             // disc = 1 if moving from 'from' unmasked a slider
+//             uint32_t disc = !!(from_bb & discovered_mask);
+
+//             // mask = 0xFFFFFFFF if (direct|disc)==1 else 0
+//             uint32_t mask = - (direct | disc);
+
+//             // flags = FLAG_CHECK if mask==0xFFFFFFFF, else 0
+//             uint32_t flags = mask & Encoder::FLAG_CHECK;
+
+//             Piece_Type cap = (opp_occ & to_bb) ? mailbox[!turn][to] : Empty;
+//             Move m = Encoder::construct_move(from, to, Knight, cap, Empty, flags);
+
+//             cnt += ok & ((buf[cnt] = m), 1);
+//         }
+//     }
+// }
+
+// static inline __attribute__((always_inline)) void generate_bishop_moves(int depth) {
+//     Move_List &ML = move_list[depth];
+//     Move* buf = ML.moves;
+//     int& cnt = ML.count;
+//     Bitboard bishops = piece_occ_bb[turn][Bishop];
+//     Bitboard opp_occ = player_occ_bb[!turn];
+//     Bitboard all_occ = player_occ_bb[all_color];
+//     Bitboard king_bb = 1ULL << king_position[!turn];
+//     while (bishops) {
+//         int from = LS1B_IDX(bishops);
+//         bishops &= bishops - 1;
+//         Bitboard from_bb = 1ULL << from;
+//         Bitboard moves = GET_BISHOP_ATTACK(all_occ, from) & (opp_occ | ~all_occ);
+//         while (moves) {
+//             int to = LS1B_IDX(moves);
+//             moves &= moves - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             uint32_t ok    = !((pin_mask & from_bb) && !(pin_ray_mask[from] & to_bb));
+//             uint32_t direct= !!(GET_BISHOP_ATTACK(all_occ, to) & king_bb);
+//             uint32_t disc  = !!((from_bb & discovered_mask) && (discovered_ray_mask[from] & to_bb));
+//             uint32_t mask  = - (direct | disc);
+//             uint32_t flags = mask & Encoder::FLAG_CHECK;
+
+//             Piece_Type cap = (opp_occ & to_bb) ? mailbox[!turn][to] : Empty;
+//             Move m = Encoder::construct_move(from, to, Bishop, cap, Empty, flags);
+
+//             cnt += ok & ((buf[cnt] = m), 1);
+//         }
+//     }
+// }
+
+// static inline __attribute__((always_inline)) void generate_rook_moves(int depth) {
+//     Move_List &ML = move_list[depth];
+//     Move* buf = ML.moves;
+//     int& cnt = ML.count;
+//     Bitboard rooks = piece_occ_bb[turn][Rook];
+//     Bitboard opp_occ = player_occ_bb[!turn];
+//     Bitboard all_occ = player_occ_bb[all_color];
+//     Bitboard king_bb = 1ULL << king_position[!turn];
+//     while (rooks) {
+//         int from = LS1B_IDX(rooks);
+//         rooks &= rooks - 1;
+//         Bitboard from_bb = 1ULL << from;
+//         Bitboard moves = GET_ROOK_ATTACK(all_occ, from) & (opp_occ | ~all_occ);
+//         while (moves) {
+//             int to = LS1B_IDX(moves);
+//             moves &= moves - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             uint32_t ok    = !((pin_mask & from_bb) && !(pin_ray_mask[from] & to_bb));
+//             uint32_t direct= !!(GET_ROOK_ATTACK(all_occ, to) & king_bb);
+//             uint32_t disc  = !!((from_bb & discovered_mask) && (discovered_ray_mask[from] & to_bb));
+//             uint32_t mask  = - (direct | disc);
+//             uint32_t flags = mask & Encoder::FLAG_CHECK;
+
+//             Piece_Type cap = (opp_occ & to_bb) ? mailbox[!turn][to] : Empty;
+//             Move m = Encoder::construct_move(from, to, Rook, cap, Empty, flags);
+
+//             cnt += ok & ((buf[cnt] = m), 1);
+//         }
+//     }
+// }
+
+// static inline __attribute__((always_inline)) void generate_queen_moves(int depth) {
+//     Move_List &ML = move_list[depth];
+//     Move* buf = ML.moves;
+//     int& cnt = ML.count;
+//     Bitboard queens = piece_occ_bb[turn][Queen];
+//     Bitboard opp_occ = player_occ_bb[!turn];
+//     Bitboard all_occ = player_occ_bb[all_color];
+//     Bitboard king_bb = 1ULL << king_position[!turn];
+//     while (queens) {
+//         int from = LS1B_IDX(queens);
+//         queens &= queens - 1;
+//         Bitboard from_bb = 1ULL << from;
+//         Bitboard moves = GET_QUEEN_ATTACK(all_occ, from) & (opp_occ | ~all_occ);
+//         while (moves) {
+//             int to = LS1B_IDX(moves);
+//             moves &= moves - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             uint32_t ok    = !((pin_mask & from_bb) && !(pin_ray_mask[from] & to_bb));
+//             uint32_t direct= !!(GET_QUEEN_ATTACK(all_occ, to) & king_bb);
+//             uint32_t disc  = !!((from_bb & discovered_mask) && (discovered_ray_mask[from] & to_bb));
+//             uint32_t mask  = - (direct | disc);
+//             uint32_t flags = mask & Encoder::FLAG_CHECK;
+
+//             Piece_Type cap = (opp_occ & to_bb) ? mailbox[!turn][to] : Empty;
+//             Move m = Encoder::construct_move(from, to, Queen, cap, Empty, flags);
+
+//             cnt += ok & ((buf[cnt] = m), 1);
+//         }
+//     }
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ONLY QUIET CHECKS ===============
+// static inline __attribute__((always_inline))
+// void generate_knight_moves(int depth)
+// {
+//     Move_List &ML       = move_list[depth];
+//     Move*      buf      = ML.moves;
+//     int&       cnt      = ML.count;
+//     Bitboard   knights  = piece_occ_bb[turn][Knight];
+//     Bitboard   opp_occ  = player_occ_bb[!turn];
+//     Bitboard   empty_bb = ~player_occ_bb[all_color];
+//     Bitboard   king_bb  = 1ULL << king_position[!turn];
+
+//     while (knights) {
+//         int from = LS1B_IDX(knights);
+//         knights &= knights - 1;
+//         Bitboard from_bb = 1ULL << from;
+//         Bitboard attacks = GET_KNIGHT_ATTACK(from);
+
+//         // — captures: no check flags, knight pinned→no move
+//         Bitboard caps = attacks & opp_occ;
+//         while (caps) {
+//             int to = LS1B_IDX(caps);
+//             caps &= caps - 1;
+//             Piece_Type cap = mailbox[!turn][to];
+//             Move m = Encoder::construct_move(from, to, Knight, cap, Empty, 0u);
+//             cnt += ((pin_mask & from_bb) == 0) & (buf[cnt] = m, 1);
+//         }
+
+//         // — non-captures: branchless check detection, knight pinned→no move
+//         Bitboard moves = attacks & empty_bb;
+//         while (moves) {
+//             int to = LS1B_IDX(moves);
+//             moves &= moves - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             // direct check?
+//             uint32_t direct = !!(GET_KNIGHT_ATTACK(to) & king_bb);
+//             // discovered?
+//             uint32_t disc   = !!(from_bb & discovered_mask);
+//             uint32_t flags  = -(direct | disc) & Encoder::FLAG_CHECK;
+
+//             Move m = Encoder::construct_move(from, to, Knight, Empty, Empty, flags);
+//             cnt += ((pin_mask & from_bb) == 0) & (buf[cnt] = m, 1);
+//         }
+//     }
+// }
+
+// static inline __attribute__((always_inline))
+// void generate_bishop_moves(int depth)
+// {
+//     Move_List &ML       = move_list[depth];
+//     Move*      buf      = ML.moves;
+//     int&       cnt      = ML.count;
+//     Bitboard   bishops  = piece_occ_bb[turn][Bishop];
+//     Bitboard   opp_occ  = player_occ_bb[!turn];
+//     Bitboard   empty_bb = ~player_occ_bb[all_color];
+//     Bitboard   all_bb   = player_occ_bb[all_color];
+//     Bitboard   king_bb  = 1ULL << king_position[!turn];
+
+//     while (bishops) {
+//         int from = LS1B_IDX(bishops);
+//         bishops &= bishops - 1;
+//         Bitboard from_bb = 1ULL << from;
+//         Bitboard attacks = GET_BISHOP_ATTACK(all_bb, from);
+
+//         // — captures: no check flags, pinned→only along pin‐ray
+//         Bitboard caps = attacks & opp_occ;
+//         while (caps) {
+//             int to = LS1B_IDX(caps);
+//             caps &= caps - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             Piece_Type cap = mailbox[!turn][to];
+//             Move m = Encoder::construct_move(from, to, Bishop, cap, Empty, 0u);
+
+//             cnt += ((pin_mask & from_bb) != 0
+//                     ? ((pin_ray_mask[from] & to_bb) != 0)
+//                     : 1)
+//                    & (buf[cnt] = m, 1);
+//         }
+
+//         // — non-captures: branchless check flags, pinned→only along pin‐ray
+//         Bitboard moves = attacks & empty_bb;
+//         while (moves) {
+//             int to = LS1B_IDX(moves);
+//             moves &= moves - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             uint32_t direct = !!(GET_BISHOP_ATTACK(all_bb, to) & king_bb);
+//             uint32_t disc   = !!((from_bb & discovered_mask)
+//                                && (discovered_ray_mask[from] & to_bb));
+//             uint32_t flags  = -(direct | disc) & Encoder::FLAG_CHECK;
+
+//             Move m = Encoder::construct_move(from, to, Bishop, Empty, Empty, flags);
+//             cnt += ((pin_mask & from_bb) != 0
+//                     ? ((pin_ray_mask[from] & to_bb) != 0)
+//                     : 1)
+//                    & (buf[cnt] = m, 1);
+//         }
+//     }
+// }
+
+// static inline __attribute__((always_inline))
+// void generate_rook_moves(int depth)
+// {
+//     Move_List &ML       = move_list[depth];
+//     Move*      buf      = ML.moves;
+//     int&       cnt      = ML.count;
+//     Bitboard   rooks    = piece_occ_bb[turn][Rook];
+//     Bitboard   opp_occ  = player_occ_bb[!turn];
+//     Bitboard   empty_bb = ~player_occ_bb[all_color];
+//     Bitboard   all_bb   = player_occ_bb[all_color];
+//     Bitboard   king_bb  = 1ULL << king_position[!turn];
+
+//     while (rooks) {
+//         int from = LS1B_IDX(rooks);
+//         rooks &= rooks - 1;
+//         Bitboard from_bb = 1ULL << from;
+//         Bitboard attacks = GET_ROOK_ATTACK(all_bb, from);
+
+//         // — captures: no check flags, pinned→only along pin‐ray
+//         Bitboard caps = attacks & opp_occ;
+//         while (caps) {
+//             int to = LS1B_IDX(caps);
+//             caps &= caps - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             Piece_Type cap = mailbox[!turn][to];
+//             Move m = Encoder::construct_move(from, to, Rook, cap, Empty, 0u);
+
+//             cnt += ((pin_mask & from_bb) != 0
+//                     ? ((pin_ray_mask[from] & to_bb) != 0)
+//                     : 1)
+//                    & (buf[cnt] = m, 1);
+//         }
+
+//         // — non-captures: branchless check flags, pinned→only along pin‐ray
+//         Bitboard moves = attacks & empty_bb;
+//         while (moves) {
+//             int to = LS1B_IDX(moves);
+//             moves &= moves - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             uint32_t direct = !!(GET_ROOK_ATTACK(all_bb, to) & king_bb);
+//             uint32_t disc   = !!((from_bb & discovered_mask)
+//                                && (discovered_ray_mask[from] & to_bb));
+//             uint32_t flags  = -(direct | disc) & Encoder::FLAG_CHECK;
+
+//             Move m = Encoder::construct_move(from, to, Rook, Empty, Empty, flags);
+//             cnt += ((pin_mask & from_bb) != 0
+//                     ? ((pin_ray_mask[from] & to_bb) != 0)
+//                     : 1)
+//                    & (buf[cnt] = m, 1);
+//         }
+//     }
+// }
+
+// static inline __attribute__((always_inline))
+// void generate_queen_moves(int depth)
+// {
+//     Move_List &ML       = move_list[depth];
+//     Move*      buf      = ML.moves;
+//     int&       cnt      = ML.count;
+//     Bitboard   queens   = piece_occ_bb[turn][Queen];
+//     Bitboard   opp_occ  = player_occ_bb[!turn];
+//     Bitboard   empty_bb = ~player_occ_bb[all_color];
+//     Bitboard   all_bb   = player_occ_bb[all_color];
+//     Bitboard   king_bb  = 1ULL << king_position[!turn];
+
+//     while (queens) {
+//         int from = LS1B_IDX(queens);
+//         queens &= queens - 1;
+//         Bitboard from_bb = 1ULL << from;
+//         Bitboard attacks = GET_QUEEN_ATTACK(all_bb, from);
+
+//         // — captures: no check flags, pinned→only along pin‐ray
+//         Bitboard caps = attacks & opp_occ;
+//         while (caps) {
+//             int to = LS1B_IDX(caps);
+//             caps &= caps - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             Piece_Type cap = mailbox[!turn][to];
+//             Move m = Encoder::construct_move(from, to, Queen, cap, Empty, 0u);
+
+//             cnt += ((pin_mask & from_bb) != 0
+//                     ? ((pin_ray_mask[from] & to_bb) != 0)
+//                     : 1)
+//                    & (buf[cnt] = m, 1);
+//         }
+
+//         // — non-captures: branchless check flags, pinned→only along pin‐ray
+//         Bitboard moves = attacks & empty_bb;
+//         while (moves) {
+//             int to = LS1B_IDX(moves);
+//             moves &= moves - 1;
+//             Bitboard to_bb = 1ULL << to;
+
+//             uint32_t direct = !!(GET_QUEEN_ATTACK(all_bb, to) & king_bb);
+//             uint32_t disc   = !!((from_bb & discovered_mask)
+//                                && (discovered_ray_mask[from] & to_bb));
+//             uint32_t flags  = -(direct | disc) & Encoder::FLAG_CHECK;
+
+//             Move m = Encoder::construct_move(from, to, Queen, Empty, Empty, flags);
+//             cnt += ((pin_mask & from_bb) != 0
+//                     ? ((pin_ray_mask[from] & to_bb) != 0)
+//                     : 1)
+//                    & (buf[cnt] = m, 1);
+//         }
+//     }
+// }
+
+
+
+
+
+
+
 static inline __attribute__((always_inline)) void generate_non_capture_pawn_moves_in_check(int depth)
 {
     Move_List &ML = move_list[depth];
@@ -2033,6 +2449,7 @@ static inline __attribute__((always_inline)) void generate_queen_moves_in_check(
 
 
 
+
 static inline __attribute__((always_inline)) void generate_moves(int depth)
 {
     // zero the move count
@@ -2081,493 +2498,409 @@ static inline __attribute__((always_inline)) void generate_moves(int depth)
     }
 }
 
-static inline __attribute__((always_inline)) UndoPacked do_move(Move move)
+//------------------------------------------------------------------------------
+// do_move : plays 'move', updates bitboards/mailbox/castle/EP, toggles hash.
+//           Returns a full UndoPacked we feed to undo_move.
+//------------------------------------------------------------------------------
+static inline __attribute__((always_inline))
+UndoPacked do_move(Move move)
 {
-    // saves castling rihgts and en_passant for returning for the undo move
-    UndoPacked undo_info = Encoder::pack_undo(en_passant, castle_right);
+    // Snapshot EP+castle flags and full 64‐bit hash
+    UndoPacked undo_info;
+    undo_info.flags = Encoder::pack_flags(en_passant, castle_right);
+    undo_info.hash  = position_hash;
 
-    // parsing move
-    int from_sq = Encoder::move_get_from(move);
-    int to_sq = Encoder::move_get_to(move);
-    Piece_Type moved_piece = Encoder::move_get_moved_piece(move);
-    Piece_Type captured = Encoder::move_get_captured_piece(move);
-    Piece_Type promotion = Encoder::move_get_promo_piece(move);
-    bool double_push_flag = Encoder::move_is_double_pawn(move);
-    bool passant_flag = Encoder::move_is_en_passant(move);
-    bool kc_castle_flag = Encoder::move_is_castle_kingside(move);
-    bool qc_castle_flag = Encoder::move_is_castle_queenside(move);
-    bool opp = !turn;
-    int push_offset = (turn == white) ? -8 : 8;
-
-    // reset enpassant privileges
+    // Remove old en_passant from hash
+    if (en_passant != no_sqr) {
+        int old_file = en_passant & 7;
+        position_hash ^= Tables::zobrist_aux[ZOB_EP_FILE_A + old_file];
+    }
     en_passant = no_sqr;
 
-    if(moved_piece == Pawn)
-    {
-        // if move is a capture
-        if(captured != Empty)
-        {
-            // if move is an en_passant capture we must handle the peculiar bitboard_occupancy update
-            if(passant_flag)
-            {
-                // we must update the occupancy bitboards for both sides
-                // here we flip the from square bit since after the move this square ends up empty
-                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+    // Remove old castling bits from hash
+    if (castle_right & Castle_Right::KC) position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_WK];
+    if (castle_right & Castle_Right::QC) position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_WQ];
+    if (castle_right & Castle_Right::kc) position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_BK];
+    if (castle_right & Castle_Right::qc) position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_BQ];
 
-                // we know "to_sq" is empty in en_passant moves so we just flip it which will
-                // basically place the pawn now in this position
+    // 4) Decode move
+    int         from_sq         = Encoder::move_get_from(move);
+    int         to_sq           = Encoder::move_get_to(move);
+    Piece_Type  moved_piece     = Encoder::move_get_moved_piece(move);
+    Piece_Type  captured        = Encoder::move_get_captured_piece(move);
+    Piece_Type  promotion       = Encoder::move_get_promo_piece(move);
+    bool        double_push     = Encoder::move_is_double_pawn(move);
+    bool        ep_capture      = Encoder::move_is_en_passant(move);
+    bool        castle_K        = Encoder::move_is_castle_kingside(move);
+    bool        castle_Q        = Encoder::move_is_castle_queenside(move);
+    bool        opp             = !turn;
+    int         push_offset     = (turn == white) ? -8 : +8;
+
+    // Your pawn logic, with Zobrist hooks:
+    if (moved_piece == Pawn) {
+        if (captured != Empty) {
+            // --- en passant capture ---
+            if (ep_capture) {
+                // flip our pawn off from_sq
+                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?Pawn:Pawn+6)][from_sq];
+
+                // place pawn on to_sq
                 FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?Pawn:Pawn+6)][to_sq];
 
-                // now we remove the enemy pawn from its square
-                // Note for en_passant captrue this is one square "back" than the "to_sq" index
-                // since en_passant captures in the back of the enemy pawn if that makes sense
-                int en_passant_sq = to_sq + (-push_offset);
-                FLIP_BIT(piece_occ_bb[opp][Pawn], en_passant_sq);
+                // remove the captured pawn "behind" to_sq
+                int ep_sq = to_sq + (-push_offset);
+                FLIP_BIT(piece_occ_bb[opp][Pawn], ep_sq);
+                position_hash ^= Tables::zobrist_piece[(opp==white?Pawn:Pawn+6)][ep_sq];
 
-                // update mailbox
+                // mailbox
                 mailbox[turn][from_sq] = Empty;
-                mailbox[turn][to_sq] = moved_piece;
-
-                mailbox[opp][en_passant_sq] = Empty;
-
-                // reset en_passant value to no_sqr
-                // en_passant = no_sqr; redundant i did it on top
+                mailbox[turn][to_sq]   = Pawn;
+                mailbox[opp][ep_sq]    = Empty;
             }
-            // else if this is a promotion capture
-            else if(promotion != Empty)
-            {
-                // initial square erasing
+            // --- promotion capture ---
+            else if (promotion != Empty) {
+                // remove pawn from from_sq
                 FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?Pawn:Pawn+6)][from_sq];
 
-                // set the corresponding promoted piece bit in its corresponding place in the array
+                // place promoted piece on to_sq
                 FLIP_BIT(piece_occ_bb[turn][promotion], to_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?promotion:promotion+6)][to_sq];
 
-                // erase the enemy piece
+                // remove captured piece there
                 FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+                position_hash ^= Tables::zobrist_piece[(opp==white?captured:captured+6)][to_sq];
 
-                // update mailbox
                 mailbox[turn][from_sq] = Empty;
-                mailbox[turn][to_sq] = promotion;
-
-                mailbox[opp][to_sq] = Empty;
+                mailbox[turn][to_sq]   = promotion;
+                mailbox[opp][to_sq]    = Empty;
             }
-            // else this is a regular capture
-            else
-            {
-                // initial square erasing
+            // --- normal capture ---
+            else {
+                // pawn off from_sq
                 FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?Pawn:Pawn+6)][from_sq];
 
-                // set the corresponding piece bit in its corresponding place in the array
+                // pawn onto to_sq
                 FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?Pawn:Pawn+6)][to_sq];
 
-                // erase the enemy piece
+                // remove victim
                 FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+                position_hash ^= Tables::zobrist_piece[(opp==white?captured:captured+6)][to_sq];
 
-                // update mailbox
                 mailbox[turn][from_sq] = Empty;
-                mailbox[turn][to_sq] = moved_piece;
-
-                mailbox[opp][to_sq] = Empty;
-
+                mailbox[turn][to_sq]   = Pawn;
+                mailbox[opp][to_sq]    = Empty;
             }
         }
-        // non capturing moves
-        else
-        {
-            // double push? then we must set en_passant for next turn which is the square "before" to_sq
-            if(double_push_flag)
-            {
-                // initial square erasing
+        // --- quiet pawn moves ---
+        else {
+            // double push → set new EP
+            if (double_push) {
+                // pawn off from_sq
                 FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?Pawn:Pawn+6)][from_sq];
 
-                // set the corresponding piece bitboard
+                // pawn onto to_sq
                 FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?Pawn:Pawn+6)][to_sq];
 
-                // update mailbox
                 mailbox[turn][from_sq] = Empty;
-                mailbox[turn][to_sq] = moved_piece;
+                mailbox[turn][to_sq]   = Pawn;
 
-                // set en_passant for next move
                 en_passant = to_sq + (-push_offset);
+                position_hash ^= Tables::zobrist_aux[ZOB_EP_FILE_A + (en_passant & 7)];
             }
-            // promotion single push
-            else if(promotion != Empty)
-            {
-                // initial square erasing
+            // single‐push promotion
+            else if (promotion != Empty) {
                 FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?Pawn:Pawn+6)][from_sq];
 
-                // set the corresponding piece bitboard
                 FLIP_BIT(piece_occ_bb[turn][promotion], to_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?promotion:promotion+6)][to_sq];
 
-                // update mailbox
                 mailbox[turn][from_sq] = Empty;
-                mailbox[turn][to_sq] = promotion;
+                mailbox[turn][to_sq]   = promotion;
             }
-            //else regular push
-            else
-            {
-                // initial square erasing
+            // ordinary pawn move
+            else {
                 FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?Pawn:Pawn+6)][from_sq];
 
-                // set the corresponding piece bitboard
                 FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+                position_hash ^= Tables::zobrist_piece[(turn==white?Pawn:Pawn+6)][to_sq];
 
-                // update mailbox
                 mailbox[turn][from_sq] = Empty;
-                mailbox[turn][to_sq] = moved_piece;
+                mailbox[turn][to_sq]   = Pawn;
             }
         }
     }
-    else if(moved_piece == King)
-    {
-        // update king position
+    // King & castling (with hashing)
+    else if (moved_piece == King) {
         king_position[turn] = to_sq;
 
-        // if move is capture
-        if(captured != Empty)
-        {
+        if (captured != Empty) {
             FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?King:King+6)][from_sq];
+
             FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?King:King+6)][to_sq];
+
             FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+            position_hash ^= Tables::zobrist_piece[(opp==white?captured:captured+6)][to_sq];
 
             mailbox[turn][from_sq] = Empty;
-            mailbox[turn][to_sq] = moved_piece;
-            mailbox[opp][to_sq] = Empty;
+            mailbox[turn][to_sq]   = King;
+            mailbox[opp][to_sq]    = Empty;
         }
-        // castling moves (king side)
-        else if(kc_castle_flag)
-        {
+        else if (castle_K) {
             // king
             FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?King:King+6)][from_sq];
+
             FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?King:King+6)][to_sq];
 
             mailbox[turn][from_sq] = Empty;
-            mailbox[turn][to_sq] = moved_piece;
+            mailbox[turn][to_sq]   = King;
 
-            // rook
-            int rook_from_sq = (turn == white) ? h1 : h8;
-            int rook_to_sq = (turn == white) ? f1 : f8;
-            FLIP_BIT(piece_occ_bb[turn][Rook], rook_from_sq);
-            FLIP_BIT(piece_occ_bb[turn][Rook], rook_to_sq);
+            // rook hop
+            int rf = (turn==white? h1 : h8);
+            int rt = (turn==white? f1 : f8);
+            FLIP_BIT(piece_occ_bb[turn][Rook], rf);
+            position_hash ^= Tables::zobrist_piece[(turn==white?Rook:Rook+6)][rf];
 
-            mailbox[turn][rook_from_sq] = Empty;
-            mailbox[turn][rook_to_sq] = Rook;
+            FLIP_BIT(piece_occ_bb[turn][Rook], rt);
+            position_hash ^= Tables::zobrist_piece[(turn==white?Rook:Rook+6)][rt];
+
+            mailbox[turn][rf] = Empty;
+            mailbox[turn][rt] = Rook;
         }
-        // castling moves (queen side)
-        else if(qc_castle_flag)
-        {
-            // king
+        else if (castle_Q) {
             FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?King:King+6)][from_sq];
+
             FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?King:King+6)][to_sq];
 
             mailbox[turn][from_sq] = Empty;
-            mailbox[turn][to_sq] = moved_piece;
+            mailbox[turn][to_sq]   = King;
 
-            // rook
-            int rook_from_sq = (turn == white) ? a1 : a8;
-            int rook_to_sq = (turn == white) ? d1 : d8;
-            FLIP_BIT(piece_occ_bb[turn][Rook], rook_from_sq);
-            FLIP_BIT(piece_occ_bb[turn][Rook], rook_to_sq);
+            int rf = (turn==white? a1 : a8);
+            int rt = (turn==white? d1 : d8);
+            FLIP_BIT(piece_occ_bb[turn][Rook], rf);
+            position_hash ^= Tables::zobrist_piece[(turn==white?Rook:Rook+6)][rf];
 
-            mailbox[turn][rook_from_sq] = Empty;
-            mailbox[turn][rook_to_sq] = Rook;
+            FLIP_BIT(piece_occ_bb[turn][Rook], rt);
+            position_hash ^= Tables::zobrist_piece[(turn==white?Rook:Rook+6)][rt];
+
+            mailbox[turn][rf] = Empty;
+            mailbox[turn][rt] = Rook;
         }
-        // non captures moves
-        else
-        {
+        else {
             FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?King:King+6)][from_sq];
+
             FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?King:King+6)][to_sq];
 
             mailbox[turn][from_sq] = Empty;
-            mailbox[turn][to_sq] = moved_piece;
+            mailbox[turn][to_sq]   = King;
         }
     }
-    // rook, queen, bishop, or knight all the same thing
-    // Note castling is considered a king move so there we take care of castling
-    else
-    {
-        // if move is capture
-        if(captured != Empty)
-        {
+    // Knight/Bishop/Rook/Queen (with hashing)
+    else {
+        if (captured != Empty) {
             FLIP_BIT(piece_occ_bb[turn][moved_piece], from_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?moved_piece:moved_piece+6)][from_sq];
+
             FLIP_BIT(piece_occ_bb[turn][moved_piece], to_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?moved_piece:moved_piece+6)][to_sq];
+
             FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
+            position_hash ^= Tables::zobrist_piece[(opp==white?captured:captured+6)][to_sq];
 
             mailbox[turn][from_sq] = Empty;
-            mailbox[turn][to_sq] = moved_piece;
-            mailbox[opp][to_sq] = Empty;
-        }
-        // non captures moves
-        else
-        {
+            mailbox[turn][to_sq]   = moved_piece;
+            mailbox[opp][to_sq]    = Empty;
+        } else {
             FLIP_BIT(piece_occ_bb[turn][moved_piece], from_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?moved_piece:moved_piece+6)][from_sq];
+
             FLIP_BIT(piece_occ_bb[turn][moved_piece], to_sq);
+            position_hash ^= Tables::zobrist_piece[(turn==white?moved_piece:moved_piece+6)][to_sq];
 
             mailbox[turn][from_sq] = Empty;
-            mailbox[turn][to_sq] = moved_piece;
+            mailbox[turn][to_sq]   = moved_piece;
         }
     }
 
-    // Next Move Occupancy, turn, castle rights updates =====================================================================================================================
-    // reset the player occupancy bitboard (not the pieces but the "all pieces" per player and "all board" bitboard)
-    // std::memset(player_occ_bb, 0, sizeof(player_occ_bb));
-    std::memset(player_occ_bb, 0, 24);  // avoid recomptuing size by giving it to the fucntion diretcly
-
-    // rebuild player_occ_bb from the new pieces_occupancy bitboards
-    // 0-6 is pawn trhough king
-    for(int i=0; i<6; i++)
-    {
-        player_occ_bb[white] |= piece_occ_bb[white][i];
-        player_occ_bb[black] |= piece_occ_bb[black][i];
+    // rebuild occupancy
+    std::memset(player_occ_bb, 0, 24);
+    for (int pt = Pawn; pt <= King; ++pt) {
+      player_occ_bb[white] |= piece_occ_bb[white][pt];
+      player_occ_bb[black] |= piece_occ_bb[black][pt];
     }
-    // create the all bitboard using the combination of white and black occupancy bitboards
-    player_occ_bb[all_color] = ( player_occ_bb[white] | player_occ_bb[black] );
+    player_occ_bb[all_color] = player_occ_bb[white] | player_occ_bb[black];
 
-    // castling rights update
+    // update castling rights (no hash here—will be cleared next move)
     castle_right &= Tables::castling_table[from_sq];
     castle_right &= Tables::castling_table[to_sq];
 
+    // toggle side‐to‐move in hash
     turn = opp;
-
-    //
+    position_hash ^= Tables::zobrist_aux[ZOB_SIDE_TO_MOVE];
 
     return undo_info;
 }
 
-static inline __attribute__((always_inline)) void undo_move(Move move, UndoPacked undo_info)
+//------------------------------------------------------------------------------
+// undo_move : exact inverse of do_move above. We pass in the UndoPacked it
+//             returned, and it restores both our Zobrist key + EP/castle flags,
+//             flips turn back, then re-runs our bitboard/mailbox undoes.
+//------------------------------------------------------------------------------
+static inline __attribute__((always_inline))
+void undo_move(Move move, UndoPacked undo)
 {
-    // bring the turn back to the other player
+    // restore the whole hash + EP/castle flags
+    position_hash  = undo.hash;
+    {
+      uint16_t f = undo.flags;
+      en_passant   = Encoder::unpack_ep(f);
+      castle_right = Encoder::unpack_cr(f);
+    }
+
+    // flip side-to-move back
     turn = !turn;
-
-    // parsing move
-    int from_sq = Encoder::move_get_from(move);
-    int to_sq = Encoder::move_get_to(move);
-    Piece_Type moved_piece = Encoder::move_get_moved_piece(move);
-    Piece_Type captured = Encoder::move_get_captured_piece(move);
-    Piece_Type promotion = Encoder::move_get_promo_piece(move);
-    bool double_push_flag = Encoder::move_is_double_pawn(move);
-    bool passant_flag = Encoder::move_is_en_passant(move);
-    bool kc_castle_flag = Encoder::move_is_castle_kingside(move);
-    bool qc_castle_flag = Encoder::move_is_castle_queenside(move);
     bool opp = !turn;
-    int push_offset = (turn == white) ? -8 : 8;
+    int  push_offset = (turn == white) ? -8 : +8;
 
-    if(moved_piece == Pawn)
-    {
-        // if move is a capture
-        if(captured != Empty)
-        {
-            // if move is an en_passant capture we must handle the peculiar bitboard_occupancy update
-            if(passant_flag)
-            {
-                // al backwards here
-                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
-                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+    // decode exactly as in do_move
+    int         from_sq = Encoder::move_get_from(move);
+    int         to_sq   = Encoder::move_get_to(move);
+    Piece_Type  mp      = Encoder::move_get_moved_piece(move);
+    Piece_Type  cap     = Encoder::move_get_captured_piece(move);
+    Piece_Type  promo   = Encoder::move_get_promo_piece(move);
+    bool        dbl_push= Encoder::move_is_double_pawn(move);
+    bool        ep_cap  = Encoder::move_is_en_passant(move);
+    bool        kc      = Encoder::move_is_castle_kingside(move);
+    bool        qc      = Encoder::move_is_castle_queenside(move);
 
-                int en_passant_sq = to_sq + (-push_offset);
-                FLIP_BIT(piece_occ_bb[opp][Pawn], en_passant_sq);
-
-                // update mailbox
-                mailbox[turn][from_sq] = moved_piece;
-                mailbox[turn][to_sq] = Empty;
-
-                mailbox[opp][en_passant_sq] = Pawn;
-            }
-            // else if this is a promotion capture
-            else if(promotion != Empty)
-            {
-                //
-                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
-
-                // set the corresponding promoted piece bit in its corresponding place in the array
-                FLIP_BIT(piece_occ_bb[turn][promotion], to_sq);
-
-                // bring back enemy piece
-                FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
-
-                // update mailbox
-                mailbox[turn][from_sq] = Pawn;
-                mailbox[turn][to_sq] = Empty;
-
-                mailbox[opp][to_sq] = captured;
-            }
-            // else this is a regular capture
-            else
-            {
-                //
-                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
-
-                // set the corresponding piece bit in its corresponding place in the array
-                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
-
-                // bring back enemy piece
-                FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
-
-                // update mailbox
-                mailbox[turn][from_sq] = moved_piece;
-                mailbox[turn][to_sq] = Empty;
-
-                mailbox[opp][to_sq] = captured;
-            }
+    // exact reverse bitboard/mailbox logic:
+    if (mp == Pawn) {
+      if (cap != Empty) {
+        if (ep_cap) {
+          FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+          FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+          int ep_sq = to_sq + (-push_offset);
+          FLIP_BIT(piece_occ_bb[opp][Pawn], ep_sq);
+          mailbox[turn][from_sq] = Pawn;
+          mailbox[turn][to_sq]   = Empty;
+          mailbox[opp][ep_sq]    = Pawn;
         }
-        // non capturing moves
-        else
-        {
-            // double push? then we must set en_passant for next turn which is the square "before" to_sq
-            if(double_push_flag)
-            {
-                // initial square bring back piece
-                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
-
-                // empty to square
-                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
-
-                // update mailbox
-                mailbox[turn][from_sq] = moved_piece;
-                mailbox[turn][to_sq] = Empty;
-            }
-            // promotion single push
-            else if(promotion != Empty)
-            {
-                // initial square erasing
-                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
-
-                // set the corresponding piece bitboard
-                FLIP_BIT(piece_occ_bb[turn][promotion], to_sq);
-
-                // update mailbox
-                mailbox[turn][from_sq] = Pawn;
-                mailbox[turn][to_sq] = Empty;
-            }
-            //else regular push
-            else
-            {
-                // initial square erasing
-                FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
-
-                // set the corresponding piece bitboard
-                FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
-
-                // update mailbox
-                mailbox[turn][from_sq] = moved_piece;
-                mailbox[turn][to_sq] = Empty;
-            }
+        else if (promo != Empty) {
+          FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+          FLIP_BIT(piece_occ_bb[turn][promo], to_sq);
+          FLIP_BIT(piece_occ_bb[opp][cap],    to_sq);
+          mailbox[turn][from_sq] = Pawn;
+          mailbox[turn][to_sq]   = Empty;
+          mailbox[opp][to_sq]    = cap;
         }
+        else {
+          FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+          FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+          FLIP_BIT(piece_occ_bb[opp][cap],    to_sq);
+          mailbox[turn][from_sq] = Pawn;
+          mailbox[turn][to_sq]   = Empty;
+          mailbox[opp][to_sq]    = cap;
+        }
+      } else {
+        if (dbl_push) {
+          FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+          FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+          mailbox[turn][from_sq] = Pawn;
+          mailbox[turn][to_sq]   = Empty;
+        }
+        else if (promo != Empty) {
+          FLIP_BIT(piece_occ_bb[turn][Pawn],  from_sq);
+          FLIP_BIT(piece_occ_bb[turn][promo], to_sq);
+          mailbox[turn][from_sq] = Pawn;
+          mailbox[turn][to_sq]   = Empty;
+        }
+        else {
+          FLIP_BIT(piece_occ_bb[turn][Pawn], from_sq);
+          FLIP_BIT(piece_occ_bb[turn][Pawn], to_sq);
+          mailbox[turn][from_sq] = Pawn;
+          mailbox[turn][to_sq]   = Empty;
+        }
+      }
     }
-    else if(moved_piece == King)
-    {
-        // update king position (backwards)
-        king_position[turn] = from_sq;
-
-        // if move is capture
-        if(captured != Empty)
-        {
-            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
-            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
-            FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
-
-            mailbox[turn][from_sq] = moved_piece;
-            mailbox[turn][to_sq] = Empty;
-            mailbox[opp][to_sq] = captured;
-        }
-        // castling moves (king side)
-        else if(kc_castle_flag)
-        {
-            // king
-            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
-            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
-
-            mailbox[turn][from_sq] = moved_piece;
-            mailbox[turn][to_sq] = Empty;
-
-            // rook
-            int rook_from_sq = (turn == white) ? h1 : h8;
-            int rook_to_sq = (turn == white) ? f1 : f8;
-            FLIP_BIT(piece_occ_bb[turn][Rook], rook_from_sq);
-            FLIP_BIT(piece_occ_bb[turn][Rook], rook_to_sq);
-
-            mailbox[turn][rook_from_sq] = Rook;
-            mailbox[turn][rook_to_sq] = Empty;
-        }
-        // castling moves (queen side)
-        else if(qc_castle_flag)
-        {
-            // king
-            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
-            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
-
-            mailbox[turn][from_sq] = moved_piece;
-            mailbox[turn][to_sq] = Empty;
-
-            // rook
-            int rook_from_sq = (turn == white) ? a1 : a8;
-            int rook_to_sq = (turn == white) ? d1 : d8;
-            FLIP_BIT(piece_occ_bb[turn][Rook], rook_from_sq);
-            FLIP_BIT(piece_occ_bb[turn][Rook], rook_to_sq);
-
-            mailbox[turn][rook_from_sq] = Rook;
-            mailbox[turn][rook_to_sq] = Empty;
-        }
-        // non captures moves
-        else
-        {
-            FLIP_BIT(piece_occ_bb[turn][King], from_sq);
-            FLIP_BIT(piece_occ_bb[turn][King], to_sq);
-
-            mailbox[turn][from_sq] = moved_piece;
-            mailbox[turn][to_sq] = Empty;
-        }
+    else if (mp == King) {
+      king_position[turn] = from_sq;
+      if (cap != Empty) {
+        FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+        FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+        FLIP_BIT(piece_occ_bb[opp][cap],   to_sq);
+        mailbox[turn][from_sq] = King;
+        mailbox[turn][to_sq]   = Empty;
+        mailbox[opp][to_sq]    = cap;
+      }
+      else if (kc) {
+        FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+        FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+        mailbox[turn][from_sq] = King;
+        mailbox[turn][to_sq]   = Empty;
+        int rf = (turn==white? h1:h8), rt = (turn==white? f1:f8);
+        FLIP_BIT(piece_occ_bb[turn][Rook], rf);
+        FLIP_BIT(piece_occ_bb[turn][Rook], rt);
+        mailbox[turn][rf] = Rook;
+        mailbox[turn][rt] = Empty;
+      }
+      else if (qc) {
+        FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+        FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+        mailbox[turn][from_sq] = King;
+        mailbox[turn][to_sq]   = Empty;
+        int rf = (turn==white? a1:a8), rt = (turn==white? d1:d8);
+        FLIP_BIT(piece_occ_bb[turn][Rook], rf);
+        FLIP_BIT(piece_occ_bb[turn][Rook], rt);
+        mailbox[turn][rf] = Rook;
+        mailbox[turn][rt] = Empty;
+      }
+      else {
+        FLIP_BIT(piece_occ_bb[turn][King], from_sq);
+        FLIP_BIT(piece_occ_bb[turn][King], to_sq);
+        mailbox[turn][from_sq] = King;
+        mailbox[turn][to_sq]   = Empty;
+      }
     }
-    // rook, queen, bishop, or knight all the same thing
-    // Note castling is considered a king move so there we take care of castling
-    else
-    {
-        // if move is capture
-        if(captured != Empty)
-        {
-            FLIP_BIT(piece_occ_bb[turn][moved_piece], from_sq);
-            FLIP_BIT(piece_occ_bb[turn][moved_piece], to_sq);
-            FLIP_BIT(piece_occ_bb[opp][captured], to_sq);
-
-            mailbox[turn][from_sq] = moved_piece;
-            mailbox[turn][to_sq] = Empty;
-            mailbox[opp][to_sq] = captured;
-        }
-        // non captures moves
-        else
-        {
-            FLIP_BIT(piece_occ_bb[turn][moved_piece], from_sq);
-            FLIP_BIT(piece_occ_bb[turn][moved_piece], to_sq);
-
-            mailbox[turn][from_sq] = moved_piece;
-            mailbox[turn][to_sq] = Empty;
-        }
+    else {
+      if (cap != Empty) {
+        FLIP_BIT(piece_occ_bb[turn][mp],  from_sq);
+        FLIP_BIT(piece_occ_bb[turn][mp],  to_sq);
+        FLIP_BIT(piece_occ_bb[opp][cap],  to_sq);
+        mailbox[turn][from_sq] = mp;
+        mailbox[turn][to_sq]   = Empty;
+        mailbox[opp][to_sq]    = cap;
+      } else {
+        FLIP_BIT(piece_occ_bb[turn][mp], from_sq);
+        FLIP_BIT(piece_occ_bb[turn][mp], to_sq);
+        mailbox[turn][from_sq] = mp;
+        mailbox[turn][to_sq]   = Empty;
+      }
     }
 
-    // Next Move Occupancy, turn, castle rights updates =====================================================================================================================
-    // reset the player occupancy bitboard (not the pieces but the "all pieces" per player and "all board" bitboard)
-    // std::memset(player_occ_bb, 0, sizeof(player_occ_bb));
-    std::memset(player_occ_bb, 0, 24);  // avoid recomptuing size by giving it to the fucntion diretcly
-
-    // rebuild player_occ_bb from the new pieces_occupancy bitboards
-    // 0-6 is pawn trhough king
-    for(int i=0; i<6; i++)
-    {
-        player_occ_bb[white] |= piece_occ_bb[white][i];
-        player_occ_bb[black] |= piece_occ_bb[black][i];
+    // rebuild occupancy
+    std::memset(player_occ_bb, 0, 24);
+    for (int pt = Pawn; pt <= King; ++pt) {
+      player_occ_bb[white] |= piece_occ_bb[white][pt];
+      player_occ_bb[black] |= piece_occ_bb[black][pt];
     }
-    // create the all bitboard using the combination of white and black occupancy bitboards
-    player_occ_bb[all_color] = ( player_occ_bb[white] | player_occ_bb[black] );
-
-    // castling rights update
-    // need to preserve the castle right state to update here
-    en_passant = Encoder::get_en_passant(undo_info);
-
-    // en_passant update
-    // need to preserve the en_passant state to update here
-    castle_right = Encoder::get_castle_right(undo_info);
+    player_occ_bb[all_color] = player_occ_bb[white] | player_occ_bb[black];
 }
-
 
 
 static inline __attribute__((always_inline))
