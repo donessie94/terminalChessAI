@@ -4,6 +4,19 @@ namespace RedStone{
 
 namespace Tables{
 
+//----------------------------------------------------------------
+// MVV/LVA table, attacker × victim in [Pawn..King]
+//----------------------------------------------------------------
+const uint16_t MVV_LVA[5][5] = {
+  /*           victim:    P    N    B    R    Q    K  */
+  /* attacker P */ {      105, 205, 305, 405, 505 },
+  /*         N */  {      104, 204, 304, 404, 504 },
+  /*         B */  {      103, 203, 303, 403, 503 },
+  /*         R */  {      102, 202, 302, 402, 502 },
+  /*         Q */  {      101, 201, 301, 401, 501 },
+  // kings never capture in MVV/LVA
+};
+
 Bitboard KING_ZONE[64];
 //
 Bitboard pawn_attack_bb[2][64];  // e.g. side 0=white, 1=black

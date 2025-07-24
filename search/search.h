@@ -12,6 +12,166 @@ namespace Search{
 // “Black territory” is the top half (ranks 5–8), “White territory” the bottom half (ranks 1–4):
 static constexpr Bitboard BLACK_TERRITORY = 0xFFFFFFFF00000000ULL;
 static constexpr Bitboard WHITE_TERRITORY = 0x00000000FFFFFFFFULL;
+// used for custom max depth search
+unsigned search_depth;
+
+// now takes depth and is_max‐node so it can look up the right killer array
+static inline __attribute__((always_inline)) uint16_t move_get_score(Move m, int depth, bool is_max)
+{
+    Piece_Type attacker = Encoder::move_get_moved_piece(m);
+    Piece_Type victim   = Encoder::move_get_captured_piece(m);
+
+    //uint16_t check_bon = 0;
+    //if(move_is_check(m)) return 20;
+        //check_bon+=CHECK_BONUS;
+
+    // PV‐move super‐bonus so we try the first "line of moves" we found are best from
+    // our previous iteration of the search (iterative deepening)
+    // if (m == Encoder::principal_variation_move[0][depth])
+    //     return Encoder::PV_BONUS;
+
+    Move_Gen::TTEntry* TT = &Move_Gen::TT[Move_Gen::position_hash & Move_Gen::TT_MASK];
+
+    if(TT->key == Move_Gen::position_hash && TT->bestMove == m && TT->flag == Bound::EXACT)//&& TT->depth >= search_depth - depth)
+        return Encoder::TT_BONUS;
+
+    // MVV/LVA captures
+    if (victim != Empty
+     && attacker < King)    // attacker in [Pawn..Queen]
+    {
+        return Tables::MVV_LVA[int(attacker)][int(victim)];// + (check_bon);
+    }
+
+    // promotions
+    Piece_Type promo = Encoder::move_get_promo_piece(m);
+    if (promo != Empty)
+    {
+        switch (promo)
+        {
+            case Queen:  return Encoder::PROMOTION_BONUS +   0;
+            case Rook:   return Encoder::PROMOTION_BONUS -  10;
+            case Bishop: return Encoder::PROMOTION_BONUS -  20;
+            case Knight: return Encoder::PROMOTION_BONUS -  30;
+            default:     return Encoder::PROMOTION_BONUS;
+        }
+    }
+
+    // killer‐move bonuses
+    if (is_max)
+    {
+        if (m == Encoder::max_killer[0][depth]) return Encoder::KILLER1_BONUS;
+        if (m == Encoder::max_killer[1][depth]) return Encoder::KILLER2_BONUS;
+    }
+    else
+    {
+        if (m == Encoder::min_killer[0][depth]) return Encoder::KILLER1_BONUS;
+        if (m == Encoder::min_killer[1][depth]) return Encoder::KILLER2_BONUS;
+    }
+
+    // history heuristic
+    // give moves that have caused cutoffs in the past a modest bonus
+    // {
+    //   int from = Encoder::move_get_from(m);
+    //   int to   = Encoder::move_get_to(m);
+    //   uint8_t hist = is_max
+    //     ? max_history_move_score[from][to]
+    //     : min_history_move_score[from][to];
+    //   return hist;
+    // }
+
+    //
+    // if(move_get_moved_piece(m) != Pawn)
+    // {
+    //     int from_sq = Encoder::move_get_from(m);  // 0..63
+    //     int to_sq   = Encoder::move_get_to(m);    // 0..63
+    //     int score = 0;
+
+    //     int from_r = from_sq >> 3;   // 0 = rank 8, 1 = rank 7, …, 7 = rank 1
+    //     int to_r   = to_sq   >> 3;
+
+    //     // white moves “forward” when it goes toward bigger ranks
+    //     // black moves “forward” when it goes toward smaller ranks
+    //     int forward = ((!is_max && to_r > from_r)
+    //                 | ( is_max && to_r < from_r));  // 0 or 1
+    //     int mask    = -forward;                      // 0x00000000 or 0xFFFFFFFF
+    //     score += mask & 10;
+
+    //     // truly quiet moves
+    //     return score+2;//check_bon;
+    // }
+
+
+    // if(attacker == Pawn) return 4;
+    // else if(attacker == Knight) return 5;
+    // else if(attacker == Bishop) return 6;
+    // else if(attacker == Rook) return 3;
+    // else if(attacker == Queen) return 7;
+
+    //if(attacker == Queen) return 7;
+    //if(attacker == King) return 0;
+
+    return 0;
+}
+
+static inline __attribute__((always_inline)) uint16_t move_get_score_light(Move m, int depth, bool is_max)
+{
+    Piece_Type attacker = Encoder::move_get_moved_piece(m);
+    Piece_Type victim   = Encoder::move_get_captured_piece(m);
+
+    // MVV/LVA captures
+    if (victim != Empty
+     && attacker < King)    // attacker in [Pawn..Queen]
+    {
+        return Tables::MVV_LVA[int(attacker)][int(victim)];// + (check_bon);
+    }
+
+    // promotions
+    Piece_Type promo = Encoder::move_get_promo_piece(m);
+    if (promo != Empty)
+    {
+        switch (promo)
+        {
+            case Queen:  return Encoder::PROMOTION_BONUS +   0;
+            case Rook:   return Encoder::PROMOTION_BONUS -  10;
+            case Bishop: return Encoder::PROMOTION_BONUS -  20;
+            case Knight: return Encoder::PROMOTION_BONUS -  30;
+            default:     return Encoder::PROMOTION_BONUS;
+        }
+    }
+
+    if(attacker == King) return 0;
+
+    return 2;
+}
+
+static inline __attribute__((always_inline))
+void sort_moves_by_score_light(int depth, bool skip_first = false) {
+    auto &ML = Move_Gen::move_list[depth];
+    bool is_max = (Move_Gen::turn == white);
+    Move* begin = ML.moves + (skip_first ? 1 : 0);
+    size_t n    = ML.count - (skip_first ? 1 : 0);
+    std::sort(begin, begin + n,
+      [=](Move a, Move b) {
+        return move_get_score_light(a, depth, is_max)
+             > move_get_score_light(b, depth, is_max);
+      }
+    );
+}
+
+static inline __attribute__((always_inline))
+void sort_moves_by_score(int depth, bool skip_first = false) {
+    auto &ML = Move_Gen::move_list[depth];
+    bool is_max = (Move_Gen::turn == white);
+    Move* begin = ML.moves + (skip_first ? 1 : 0);
+    size_t n    = ML.count - (skip_first ? 1 : 0);
+    std::sort(begin, begin + n,
+      [=](Move a, Move b) {
+        return move_get_score(a, depth, is_max)
+             > move_get_score(b, depth, is_max);
+      }
+    );
+}
+
 
 static inline __attribute__((always_inline)) void print_PV()
 {
@@ -123,9 +283,6 @@ static inline __attribute__((always_inline)) int quiescence_min(int alpha, int b
 static inline __attribute__((always_inline)) int pvs_min(int alpha, int beta, int depth);
 static inline __attribute__((always_inline)) int static_evaluation(bool is_max, int depth);
 
-// used for custom max depth search
-unsigned search_depth;
-
 // 0 for white (+ infinity) and 1 for black (- infinity)
 constexpr const int infinity[2] = { INF, -INF };
 
@@ -133,10 +290,12 @@ unsigned long long node_count;
 unsigned long long prune_count;
 int pos_eval;
 constexpr const int PRESSURE_WEIGHT     = 8;
-constexpr const int DPEN                = 32;  // penalty per doubled pawn
-constexpr const int TPEN                = 64;  // penalty per tripled pawn
+constexpr const int DPEN                = 16;  // penalty per doubled pawn
+constexpr const int TPEN                = 32;  // penalty per tripled pawn
 constexpr const int IPEN                = 32;
 constexpr const int BISHOP_PAIR_BONUS   = 50;
+
+
 
 // wait i am missing here covers of the check or king evasions too because else an attack
 // could be not explored (since it will stop middle attack when enemy cant capture or check back)
@@ -152,110 +311,155 @@ constexpr const int BISHOP_PAIR_BONUS   = 50;
 // i think it will be better to give the enemy player an extra move and see where we stand after that tbh
 // actually this last idea may favor positions where the queen is hiden behind pieces and cant be capture by the enemy in a single extra move
 // so it does not convince me either
+//
+// NOTE i must FIX the fact that i can simply pad a check position (i must allow check evasion moves instead) since i cant just simply say is better to not do
+// anything than move when my king is in check
+
+// Evaluation Table (for saving evaluations)
+struct ETEntry {
+    uint64_t    key;            // full Zobrist key (64-bit)
+    int         evaluation;     // evaluation
+};
+static constexpr size_t ET_SIZE = 1ULL << 26;
+static constexpr size_t ET_MASK = ET_SIZE - 1;
+ETEntry   EvalTable[ET_SIZE];
+
+unsigned long long ET_Hits = 0;
+unsigned long long ET_Miss = 0;
+
 static inline __attribute__((always_inline)) int quiescence_max(int alpha, int beta, int depth)
 {
     node_count++;
 
+    // HASH EVALUATION ========================================================
+    uint64_t key = Move_Gen::position_hash & ET_MASK;
+    //uint64_t key = ((Move_Gen::position_hash << 6) ^ depth) & ET_MASK;
+    ETEntry* ET = &EvalTable[key];
+    int initial_evaluation;
+    if (ET->key == Move_Gen::position_hash) {
+        initial_evaluation = ET->evaluation;
+        // if we just got the evaluation form the hash then we must make sure we generate the move for this node
+        Move_Gen::generate_moves(depth);
+        ET_Hits++;
+    } else {
+        // this already generates all moves for us and check for checkmate and stalemate
+        initial_evaluation  = static_evaluation(1, depth);
+        ET->key             = Move_Gen::position_hash;
+        ET->evaluation      = initial_evaluation;
+        ET_Miss++;
+    }
+    // ========================================================================
+
     // prevents infinity checks loop
-    // if (depth >= search_depth + 6)
-    //     return static_evaluation(1, depth);
-
-    // this already generates all moves for us and check for checkmate and stalemate
-    int initial_evaluation = static_evaluation(1, depth);
-
-    //makes sure we have an alpha to compare against (if moves from here are bad we dont want to take them, example capturing a pawn with a queen)
-    if(initial_evaluation>alpha)
-        alpha = initial_evaluation;
-
-    if (initial_evaluation >= beta)     // SOFT/HARD cutoff
-    {
-        prune_count++;
+    if (depth >= search_depth + 8)
         return initial_evaluation;
+
+    int current_node_best = alpha;
+
+    // ensures a mate is not skippped, if initial evaluation is mate (attackers are != 0) then without this safeguard
+    // we losse the initial evaluation completly since the iff would be skipped
+    // SOLVES THE ISSUE of being in check we still evaluate the position as we can simply do nothing to be better wich makes no sense
+    if(Move_Gen::num_attackers == 0 || initial_evaluation < -15000)
+    {
+        //makes sure we have an alpha to compare against (if moves from here are bad we dont want to take them, example capturing a pawn with a queen)
+        if(initial_evaluation>alpha)
+            alpha = initial_evaluation;
+
+        if (initial_evaluation >= beta)     // SOFT/HARD cutoff
+        {
+            prune_count++;
+            return initial_evaluation;
+        }
+        current_node_best = initial_evaluation;
     }
 
-
     // Sort the list of moves by MVV/LVA table
-    Move_Gen::sort_moves_by_score(depth);
+    // WE DONT NEED FULL SORTING HERE we dont update killers, or TT, or PV here, so we just need
+    // a lightweight MVV/LVA sorting
+    sort_moves_by_score_light(depth);
 
     //
     //int current_node_best = alpha; // start at the lower bound instead (same thing)
-    int current_node_best = initial_evaluation;
+    //int current_node_best = initial_evaluation;
 
     // lets divide this into in check or not in check
     // we allow all valid moves "in check"
     // NOTE we MUST check the whole attack line, we must allow "check covers moves" and "king escapes moves"
     // the down side is that a a "better position" close to mate (lets say in 2 more moves) is not accounted for
     // if it involves quiet moves in between
-    // if(Move_Gen::num_attackers > 0)
-    // {
-    //     // iterate all moves (we only generate valid moves so all possible moves are going to protect the check)
-    //     for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
-    //     {
-    //         Move move = Move_Gen::move_list[depth].moves[mv];
+    if(Move_Gen::num_attackers > 0)
+    {
+        // iterate all moves (we only generate valid moves so all possible moves are going to protect the check)
+        for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
+        {
+            Move move = Move_Gen::move_list[depth].moves[mv];
 
-    //         UndoPacked undo_info = Move_Gen::do_move(move);
+            UndoPacked undo_info = Move_Gen::do_move(move);
 
-    //         int next_node_evaluation = quiescence_min(alpha, beta, depth+1);
+            int next_node_evaluation = quiescence_min(alpha, beta, depth+1);
 
-    //         Move_Gen::undo_move(move, undo_info);
+            Move_Gen::undo_move(move, undo_info);
 
-    //         // MAX does cutoff for MIN and viceversa
-    //         // we do a soft cuttof (equal positions are still traversed)
-    //         if(next_node_evaluation >= beta)                                                // SOFT/HARD CUT-OFFF
-    //         {
-    //             prune_count++;
-    //             return next_node_evaluation;
-    //         }
+            // MAX does cutoff for MIN and viceversa
+            // we do a soft cuttof (equal positions are still traversed)
+            if(next_node_evaluation >= beta)                                                // SOFT/HARD CUT-OFFF
+            {
+                prune_count++;
+                return next_node_evaluation;
+            }
 
-    //         // when we get to the bottom (well 1 up from the bottom since bottom only evaluates)
-    //         // we assign the next_node_evaluation (at the bottom is the leaf node eval basically) to current node best
-    //         if( next_node_evaluation > current_node_best)
-    //         {
-    //             // if the above is true then we found a better move for MAX player so we assign it
-    //             // as current depth node best move
-    //             current_node_best = next_node_evaluation;
+            // when we get to the bottom (well 1 up from the bottom since bottom only evaluates)
+            // we assign the next_node_evaluation (at the bottom is the leaf node eval basically) to current node best
+            if( next_node_evaluation > current_node_best)
+            {
+                // if the above is true then we found a better move for MAX player so we assign it
+                // as current depth node best move
+                current_node_best = next_node_evaluation;
 
-    //             // if this evaluation is also best that our current cut-off limit then we assign it as cut-off limit
-    //             if(next_node_evaluation >= alpha)
-    //                 alpha = next_node_evaluation;
-    //         }
-    //     }
-    // }
-    // // non check state -> we only generate checks, promos, captures
-    // else
+                // if this evaluation is also best that our current cut-off limit then we assign it as cut-off limit
+                if(next_node_evaluation >= alpha)
+                    alpha = next_node_evaluation;
+            }
+        }
+    }
+    // non check state -> we only generate checks, promos, captures
+    else
     {
         // iterate only captures/promotion/check moves to find a stable position where a static evluation is meaningful
         for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
         {
             Move move = Move_Gen::move_list[depth].moves[mv];
             UndoPacked undo_info;
-            if  ( ( Encoder::move_get_promo_piece(move) != Empty
-                    || Encoder::move_get_captured_piece(move) != Empty
-                    )
-                )
-            {
-                    undo_info = Move_Gen::do_move(move);
-            }
-            else
-            {
-                continue;
-            }
 
-
-            // ONLY CAPTURES, CHECK, PROMOTIONS CHECK_BLOCKS, KING_EVASIONS ==========================================================================================
-            // note this wont mess up anything since we aready used to generate this depth valid moves
-            // so this information is not needed on this dpeth anymore (we already have all the moves)
-            // Move_Gen::generate_check_mask();
-            // // if the move is not a check, or promotion, or capture we ignore it
-            // if  ( !( Encoder::move_get_promo_piece(move) != Empty
+            // NO CHECKS
+            // if  ( ( Encoder::move_get_promo_piece(move) != Empty
             //         || Encoder::move_get_captured_piece(move) != Empty
-            //         || Move_Gen::num_attackers > 0  // we ensure here move is check or not
             //         )
             //     )
             // {
-            //     Move_Gen::undo_move(move, undo_info);
+            //         undo_info = Move_Gen::do_move(move);
+            // }
+            // else
+            // {
             //     continue;
             // }
+
+
+            // ONLY CAPTURES, CHECK, PROMOTIONS ==========================================================================================
+            undo_info = Move_Gen::do_move(move);
+            // note this wont mess up anything since we aready used to generate this depth valid moves
+            // so this information is not needed on this dpeth anymore (we already have all the moves)
+            Move_Gen::generate_check_mask();
+            // if the move is not a check, or promotion, or capture we ignore it
+            if  ( !( Encoder::move_get_promo_piece(move) != Empty
+                    || Encoder::move_get_captured_piece(move) != Empty
+                    || Move_Gen::num_attackers > 0  // we ensure here move is check or not
+                    )
+                )
+            {
+                Move_Gen::undo_move(move, undo_info);
+                continue;
+            }
             // else we continue our search
 
             // =====================================================================================================================================================
@@ -265,7 +469,7 @@ static inline __attribute__((always_inline)) int quiescence_max(int alpha, int b
             Move_Gen::undo_move(move, undo_info);
 
             // MAX does cutoff for MIN and viceversa
-            // we do a soft cuttof (equal positions are still traversed)
+            // we do a soft cuttof (equal positions are not traversed)
             if(next_node_evaluation >= beta)                                                // SOFT/HARD CUT-OFFF
             {
                 prune_count++;
@@ -293,71 +497,103 @@ static inline __attribute__((always_inline)) int quiescence_max(int alpha, int b
     return current_node_best;
 }
 
+
 static inline __attribute__((always_inline)) int quiescence_min(int alpha, int beta, int depth)
 {   //beta +infinity starts
     node_count++;
-    // if (depth >= search_depth + 6)
-    //     return static_evaluation(0, depth);
-    int initial_evaluation = static_evaluation(0, depth);
-    if(initial_evaluation<beta)
-        beta = initial_evaluation;
-    if(initial_evaluation <= alpha)                                                   // SOFT/HARD CUT-OFFF
-    {
-        prune_count++;
-        return initial_evaluation;
+    // HASH EVALUATION ========================================================
+    uint64_t key = Move_Gen::position_hash & ET_MASK;
+    //uint64_t key = ((Move_Gen::position_hash << 6) ^ depth) & ET_MASK;
+    ETEntry* ET = &EvalTable[key];
+    int initial_evaluation;
+    if (ET->key == Move_Gen::position_hash) {
+        initial_evaluation = ET->evaluation;
+        // if we just got the evaluation form the hash then we must make sure we generate the move for this node
+        Move_Gen::generate_moves(depth);
+        ET_Hits++;
+    } else {
+        // this already generates all moves for us and check for checkmate and stalemate
+        initial_evaluation  = static_evaluation(1, depth);
+        ET->key             = Move_Gen::position_hash;
+        ET->evaluation      = initial_evaluation;
+        ET_Miss++;
     }
-    Move_Gen::sort_moves_by_score(depth);
+    // ========================================================================
+    if (depth >= search_depth + 8)
+        return initial_evaluation;
+    int current_node_best = beta;
+    //
+    if(Move_Gen::num_attackers == 0 || initial_evaluation > 15000)
+    {
+        if(initial_evaluation<beta)
+            beta = initial_evaluation;
+        if(initial_evaluation <= alpha)                                                   // SOFT/HARD CUT-OFFF
+        {
+            prune_count++;
+            return initial_evaluation;
+        }
+        current_node_best = initial_evaluation;
+    }
+
+    sort_moves_by_score_light(depth);
     //int current_node_best = beta;
-    int current_node_best = initial_evaluation;
-    // if(Move_Gen::num_attackers > 0)
-    // {
-    //     for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
-    //     {
-    //         Move move = Move_Gen::move_list[depth].moves[mv];
-    //         UndoPacked undo_info = Move_Gen::do_move(move);
-    //         int next_node_evaluation = quiescence_max(alpha, beta, depth+1);
-    //         Move_Gen::undo_move(move, undo_info);
-    //         if(next_node_evaluation <= alpha)                                            // SOFT/HARD CUT-OFFF
-    //         {
-    //             prune_count++;
-    //             return next_node_evaluation;
-    //         }
-    //         if(next_node_evaluation < current_node_best)
-    //         {
-    //             current_node_best = next_node_evaluation;
-    //             if(next_node_evaluation < beta)
-    //                 beta = next_node_evaluation;
-    //         }
-    //     }
-    // }
-    // else
+    //int current_node_best = initial_evaluation;
+    if(Move_Gen::num_attackers > 0)
     {
         for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
         {
             Move move = Move_Gen::move_list[depth].moves[mv];
-            UndoPacked undo_info;
-            if  ( ( Encoder::move_get_promo_piece(move) != Empty
-                    || Encoder::move_get_captured_piece(move) != Empty
-                    )
-                )
+            UndoPacked undo_info = Move_Gen::do_move(move);
+            int next_node_evaluation = quiescence_max(alpha, beta, depth+1);
+            Move_Gen::undo_move(move, undo_info);
+            if(next_node_evaluation <= alpha)                                            // SOFT/HARD CUT-OFFF
             {
-                undo_info = Move_Gen::do_move(move);
+                prune_count++;
+                return next_node_evaluation;
             }
-            else
+            if(next_node_evaluation < current_node_best)
             {
-                continue;
+                current_node_best = next_node_evaluation;
+                if(next_node_evaluation < beta)
+                    beta = next_node_evaluation;
             }
+        }
+    }
+    else
+    {
+        for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
+        {
+            Move move = Move_Gen::move_list[depth].moves[mv];
 
-            // Move_Gen::generate_check_mask();
-            // if  ( !( Encoder::move_get_promo_piece(move) != Empty
+            UndoPacked undo_info;
+
+            // NO CHECK
+            // if  ( ( Encoder::move_get_promo_piece(move) != Empty
             //         || Encoder::move_get_captured_piece(move) != Empty
-            //         || Move_Gen::num_attackers > 0  // we ensure here move is check or not
             //         )
             //     )
             // {
-            //     Move_Gen::undo_move(move, undo_info);
+            //     undo_info = Move_Gen::do_move(move);
+            // }
+            // else
+            // {
             //     continue;
             // }
+
+            // INCLUDES CHECK
+            undo_info = Move_Gen::do_move(move);
+            Move_Gen::generate_check_mask();
+            // if the move is not a check, or promotion, or capture we ignore it
+            if  ( !( Encoder::move_get_promo_piece(move) != Empty
+                    || Encoder::move_get_captured_piece(move) != Empty
+                    || Move_Gen::num_attackers > 0  // we ensure here move is check or not
+                    )
+                )
+            {
+                Move_Gen::undo_move(move, undo_info);
+                continue;
+            }
+
             int next_node_evaluation = quiescence_max(alpha, beta, depth+1);
             Move_Gen::undo_move(move, undo_info);
             if(next_node_evaluation <= alpha)                                            // SOFT/HARD CUT-OFFF
@@ -375,6 +611,7 @@ static inline __attribute__((always_inline)) int quiescence_min(int alpha, int b
     }
     return current_node_best;
 }
+
 
 // static_evaluation: Combines tactical and positional factors into a single centipawn score.
 //   is_max: true if evaluating for the side to move in Max nodes, false for Min.
@@ -509,7 +746,7 @@ int static_evaluation(bool is_max, int depth) {
     // Bitboard b_minors_bb = piece_occ_bb[black][Knight] | piece_occ_bb[black][Bishop];
     // int b_minors = COUNT_BITS(b_minors_bb);
 
-    // int minor_diff = (w_minors - b_minors) * 32;
+    // int minor_diff = (w_minors - b_minors) * 64;
     // raw += minor_diff;  // positive favors White, negative favors Black
 
     // Return final centipawn evaluation: positive = White better, negative = Black better
@@ -578,7 +815,7 @@ static inline __attribute__((always_inline)) int alpha_beta_max(int alpha, int b
 
 
     // Sort the list of moves by MVV/LVA table
-    Move_Gen::sort_moves_by_score(depth);
+    sort_moves_by_score(depth);
 
     //  - infinity basically
     //int current_node_best = -INF;
@@ -688,7 +925,7 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
             return 0;
     }
     // Sort the list of moves by MVV/LVA table
-    Move_Gen::sort_moves_by_score(depth);
+    sort_moves_by_score(depth);
     //int current_node_best = INF;
     int current_node_best = beta;
     for(int mv=0; mv<Move_Gen::move_list[depth].count; mv++)
@@ -728,7 +965,7 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
 }
 
 
-// Define your pawn unit once:
+// Define some const needed for debug and delta for the window width
 static constexpr int DELTA = 1;
 unsigned long long re_search_count;
 unsigned long long probe_fail_high = 0, probe_fail_low = 0;
@@ -742,13 +979,39 @@ static inline __attribute__((always_inline)) int pvs_max(int alpha, int beta, in
         // return static_evaluation(1, depth);
     }
 
+    // Transposition Table=====================================================
+    Move_Gen::TTEntry* TT = &Move_Gen::TT[Move_Gen::position_hash & Move_Gen::TT_MASK];
+    int remaining_depth = search_depth - depth;
+    bool better_depth = (remaining_depth > TT->depth)?true:false;
+    // bool better_depth = true;
+    if(TT->key == Move_Gen::position_hash)
+    {
+        if(TT->flag == Bound::EXACT && TT->depth >= remaining_depth)
+        {
+            return TT->score;
+        }
+        // LOWER bound (fail‐high): true_score ≥ TT->score ≥ β => safe to cutoff at β
+        else if(TT->flag == Bound::LOWER && TT->score >= beta && TT->depth >= remaining_depth)
+        {
+            // return beta;
+            return TT->score;
+        }
+        // UPPER bound (fail‐low): true_score ≤ TT->score ≤ α => safe to cutoff at α
+        else if(TT->flag == Bound::UPPER && TT->score <= alpha && TT->depth >= remaining_depth)
+        {
+            return TT->score;
+            //return alpha;
+        }
+    }
+    // ========================================================================
 
     Move_Gen::generate_moves(depth);
     if (Move_Gen::move_list[depth].count == 0)
         return Move_Gen::num_attackers > 0 ? - (INF - depth) : 0;
 
-    Move_Gen::sort_moves_by_score(depth);
+    sort_moves_by_score(depth);
     int best = alpha;
+    int orig_alpha = alpha, orig_beta = beta;
 
     for (int i = 0; i < Move_Gen::move_list[depth].count; ++i) {
         Move m = Move_Gen::move_list[depth].moves[i];
@@ -759,18 +1022,42 @@ static inline __attribute__((always_inline)) int pvs_max(int alpha, int beta, in
             // first move = full window
             score = pvs_min(alpha, beta, depth + 1);
         } else {
-            // 1) null-window probe
+            // null-window probe
             score = pvs_min(alpha, alpha + DELTA, depth + 1);
 
-            // 2) fail-high: if probe ≥ beta, undo & cutoff immediately
+            // fail-high: if probe ≥ beta, undo & cutoff immediately
             if (score >= beta) {
                 probe_fail_high++;
                 Move_Gen::undo_move(m, undo);
+
+                // Killer Moves============================================================
+                if (Encoder::move_get_captured_piece(m) == Empty &&
+                    Encoder::move_get_promo_piece(m)     == Empty &&
+                    //!Encoder::move_is_check(m) &&
+                    m != Encoder::max_killer[0][depth])
+                {
+                    Encoder::max_killer[1][depth] = Encoder::max_killer[0][depth];
+                    Encoder::max_killer[0][depth] = m;
+                }
+                // ========================================================================
+
+                // Transposition Table=====================================================
+                if(better_depth)
+                {
+                    TT->key         = Move_Gen::position_hash;
+                    TT->bestMove    = m;
+                    TT->score       = score;
+                    TT->flag        = Bound::LOWER;
+                    TT->depth       = remaining_depth;
+                    // TT->age         += 1;
+                }
+                // ========================================================================
+
                 prune_count++;
                 return score;
             }
 
-            // 3) re-search full if it might beat alpha
+            // re-search full if it might beat alpha
             if (score > alpha) {
                 re_search_count++;
                 score = pvs_min(alpha, beta, depth + 1);
@@ -789,6 +1076,18 @@ static inline __attribute__((always_inline)) int pvs_max(int alpha, int beta, in
                 Encoder::max_killer[1][depth] = Encoder::max_killer[0][depth];
                 Encoder::max_killer[0][depth] = m;
             }
+            // Transposition Table=====================================================
+            if(better_depth)
+            {
+                TT->key         = Move_Gen::position_hash;
+                TT->bestMove    = m;
+                TT->score       = score;
+                TT->flag        = Bound::LOWER;
+                TT->depth       = remaining_depth;
+                // TT->age         += 1;
+            }
+            // ========================================================================
+
             prune_count++;
             return score;
         }
@@ -809,6 +1108,20 @@ static inline __attribute__((always_inline)) int pvs_max(int alpha, int beta, in
         }
     }
 
+    // Transposition Table=====================================================
+    if(better_depth)
+    {
+        TT->key                                 = Move_Gen::position_hash;
+        TT->bestMove                            = Encoder::principal_variation_move[depth][0];
+        TT->score                               = best;
+        if(best >= orig_beta)          TT->flag = Bound::LOWER;
+        else if(best <= orig_alpha)    TT->flag = Bound::UPPER;
+        else                           TT->flag = Bound::EXACT;
+        TT->depth                               = remaining_depth;
+        // TT->age                                 += 1;
+    }
+    // ========================================================================
+
     return best;
 }
 
@@ -821,13 +1134,39 @@ static inline __attribute__((always_inline)) int pvs_min(int alpha, int beta, in
         // return static_evaluation(0, depth);
     }
 
+    // Transposition Table=====================================================
+    Move_Gen::TTEntry* TT = &Move_Gen::TT[Move_Gen::position_hash & Move_Gen::TT_MASK];
+    // remaining depth cuz we evaluated this position when we had "X" remaining depth and
+    // since evaluation is bottom up this translates to this evaluation is "X" level deep
+    int remaining_depth = search_depth - depth;
+    bool better_depth = (remaining_depth > TT->depth)?true:false;
+    // bool better_depth = true;
+    if(TT->key == Move_Gen::position_hash)
+    {
+        if(TT->flag == Bound::EXACT && TT->depth >= remaining_depth)
+        {
+            return TT->score;
+        }
+        else if(TT->flag == Bound::UPPER && TT->score <= alpha && TT->depth >= remaining_depth)
+        {
+            // return alpha;
+            return TT->score;
+        }
+        else if(TT->flag == Bound::LOWER && TT->score >= beta && TT->depth >= remaining_depth)
+        {
+            return TT->score;
+            // return beta;
+        }
+    }
+    // ========================================================================
 
     Move_Gen::generate_moves(depth);
     if (Move_Gen::move_list[depth].count == 0)
         return Move_Gen::num_attackers > 0 ?   (INF - depth) : 0;
 
-    Move_Gen::sort_moves_by_score(depth);
+    sort_moves_by_score(depth);
     int best = beta;
+    int orig_alpha = alpha, orig_beta = beta;
 
     for (int i = 0; i < Move_Gen::move_list[depth].count; ++i) {
         Move m = Move_Gen::move_list[depth].moves[i];
@@ -838,18 +1177,42 @@ static inline __attribute__((always_inline)) int pvs_min(int alpha, int beta, in
             // first move = full window
             score = pvs_max(alpha, beta, depth + 1);
         } else {
-            // 1) null-window probe
+            // null-window probe
             score = pvs_max(beta - DELTA, beta, depth + 1);
 
-            // 2) fail-low: if probe ≤ alpha, undo & cutoff immediately
+            // fail-low: if probe ≤ alpha, undo & cutoff immediately
             if (score <= alpha) {
                 probe_fail_low++;
                 Move_Gen::undo_move(m, undo);
+
+                // Killer Moves============================================================
+                if (Encoder::move_get_captured_piece(m) == Empty &&
+                    Encoder::move_get_promo_piece(m)     == Empty &&
+                    //!Encoder::move_is_check(m) &&
+                    m != Encoder::min_killer[0][depth])
+                {
+                    Encoder::min_killer[1][depth] = Encoder::min_killer[0][depth];
+                    Encoder::min_killer[0][depth] = m;
+                }
+                // ========================================================================
+
+                // Transposition Table=====================================================
+                if(better_depth)
+                {
+                    TT->key         = Move_Gen::position_hash;
+                    TT->bestMove    = m;
+                    TT->score       = score;
+                    TT->flag        = Bound::UPPER;
+                    TT->depth       = remaining_depth;
+                    // TT->age         += 1;
+                }
+                // ========================================================================
+
                 prune_count++;
                 return score;
             }
 
-            // 3) re-search full if it might beat beta
+            // re-search full if it might beat beta
             if (score < beta) {
                 re_search_count++;
                 score = pvs_max(alpha, beta, depth + 1);
@@ -868,6 +1231,18 @@ static inline __attribute__((always_inline)) int pvs_min(int alpha, int beta, in
                 Encoder::min_killer[1][depth] = Encoder::min_killer[0][depth];
                 Encoder::min_killer[0][depth] = m;
             }
+            // Transposition Table=====================================================
+            if(better_depth)
+            {
+                TT->key         = Move_Gen::position_hash;
+                TT->bestMove    = m;
+                TT->score       = score;
+                TT->flag        = Bound::UPPER;
+                TT->depth       = remaining_depth;
+                // TT->age         += 1;
+            }
+            // ========================================================================
+
             prune_count++;
             return score;
         }
@@ -888,9 +1263,22 @@ static inline __attribute__((always_inline)) int pvs_min(int alpha, int beta, in
         }
     }
 
+    // Transposition Table=====================================================
+    if(better_depth)
+    {
+        TT->key                                 = Move_Gen::position_hash;
+        TT->bestMove                            = Encoder::principal_variation_move[depth][0];
+        TT->score                               = best;
+        if(best >= orig_beta)          TT->flag = Bound::LOWER;
+        else if(best <= orig_alpha)    TT->flag = Bound::UPPER;
+        else                           TT->flag = Bound::EXACT;
+        TT->depth                               = remaining_depth;
+        // TT->age                                 += 1;
+    }
+    // ========================================================================
+
     return best;
 }
-
 
 
 static inline __attribute__((always_inline))
@@ -909,6 +1297,11 @@ Move find_best_move_white(int max_depth)
     int current_node_best = alpha;  // we want the highest score
 
     search_depth = max_depth;
+
+    // Transposition Table=====================================================
+    // Move_Gen::TTEntry* TT = &Move_Gen::TT[Move_Gen::position_hash & Move_Gen::TT_MASK];
+    // ========================================================================
+
 
     // generate and sort White’s root moves (Max = true, depth = 0)
     Move_Gen::generate_moves(0);
@@ -967,6 +1360,14 @@ Move find_best_move_white(int max_depth)
         Move_Gen::undo_move(m, undo_info);
     }
 
+    // Transposition Table=====================================================
+    // TT->key                                 = Move_Gen::position_hash;
+    // TT->bestMove                            = Encoder::principal_variation_move[0][0];
+    // TT->score                               = alpha;
+    // TT->flag                                = Bound::EXACT;
+    // TT->depth                               = search_depth;
+    // ========================================================================
+
     pos_eval = current_node_best;
     return best_move;
 }
@@ -983,6 +1384,10 @@ Move find_best_move_black(int max_depth)
     int alpha = -INF;
     int beta  = INF;
     int current_node_best = beta;  // we want the lowest score
+
+    // Transposition Table=====================================================
+    // Move_Gen::TTEntry* TT = &Move_Gen::TT[Move_Gen::position_hash & Move_Gen::TT_MASK];
+    // ========================================================================
 
     search_depth = max_depth;
 
@@ -1030,19 +1435,38 @@ Move find_best_move_black(int max_depth)
         // no α‐cut at root
         Move_Gen::undo_move(m, undo_info);
     }
-
+    // Transposition Table=====================================================
+    // TT->key                                 = Move_Gen::position_hash;
+    // TT->bestMove                            = Encoder::principal_variation_move[0][0];
+    // TT->score                               = beta;
+    // TT->flag                                = Bound::EXACT;
+    // TT->depth                               = search_depth;
+    // ========================================================================
     pos_eval = current_node_best;
     return best_move;
 }
 
+// serves as counter for clearing the evaluation chache
+static uint8_t busquedas = 0;
 static inline __attribute__((always_inline))
 Move iterative_deepen(bool white_to_move, int max_depth)
 {
     std::fill(Encoder::principal_variation_length, Encoder::principal_variation_length + max_depth + 1, 0);
     std::memset(Encoder::max_killer, 0, sizeof(Encoder::max_killer));
     std::memset(Encoder::min_killer, 0, sizeof(Encoder::min_killer));
+
+    // if(busquedas == 4)
+    // {
+    //     busquedas = 0;
+    //     std::memset(EvalTable, 0, sizeof(EvalTable));
+    // }
+
+    // clear the transposition table once per move
+    std::memset(Move_Gen::TT, 0, sizeof(Move_Gen::TT));
+
     Move best = 0;
     for (int d = 1; d <= max_depth; ++d) {
+        ET_Hits = 0;    ET_Miss = 0;
         node_count = 0;
         re_search_count = 0;
         probe_fail_high = 0; probe_fail_low = 0;
@@ -1052,9 +1476,11 @@ Move iterative_deepen(bool white_to_move, int max_depth)
             best = find_best_move_black(d);
         }
         printf("Depth: %d, Node Count: %llu, Re-Search Count: %llu (%.1f%%) ", d, node_count, re_search_count, 100.0 * re_search_count / (node_count + 1));
-        printf("Probe cutoffs: fail-high=%llu, fail-low=%llu\n",
+        printf("Probe cutoffs: fail-high=%llu, fail-low=%llu , ",
        probe_fail_high, probe_fail_low);
+       printf("ET_Hits: %llu, ET_Miss: %llu (%.1f%%)\n", ET_Hits, ET_Miss, 100.0*ET_Hits/(ET_Hits+ET_Miss));
     }
+    // busquedas++;
     return best;
 }
 

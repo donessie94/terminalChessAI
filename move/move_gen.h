@@ -1,5 +1,6 @@
 #pragma once
 #include"../utils/misc.h"
+#include"tables.h"
 
 namespace RedStone{
 
@@ -84,6 +85,16 @@ static constexpr int MAX_MOVES = 218;
 
 // =========================================================================================================================================================
 
+//------------------------------------------------------------------------------
+//    The entry “flags” tell us whether the stored score is an exact value, a
+//    lower bound (β cutoff), or an upper bound (α cutoff).
+//------------------------------------------------------------------------------
+enum class Bound : uint8_t {
+    EXACT,      // exact score (true minimax value was computed, no prunes, seacrh all the way to depth)
+    LOWER,      // score ≥ storedScore  (beta cutoff)
+    UPPER       // score ≤ storedScore  (alpha cutoff)
+};
+
 namespace Move_Gen{
 
 // Globals====================================================================================================================================================
@@ -133,17 +144,7 @@ extern Piece_Type mailbox[2][64];
 // TRANSPOSITION TABLE =============================================================================================
 
 //------------------------------------------------------------------------------
-// 1) The entry “flags” tell us whether the stored score is an exact value, a
-//    lower bound (β cutoff), or an upper bound (α cutoff).
-//------------------------------------------------------------------------------
-enum class Bound : uint8_t {
-    EXACT,      // exact score (true minimax value was computed, no prunes, seacrh all the way to depth)
-    LOWER,      // score ≥ storedScore  (beta cutoff)
-    UPPER       // score ≤ storedScore  (alpha cutoff)
-};
-
-//------------------------------------------------------------------------------
-// 2) Each bucket holds one TT entry.  The best move from this position is found here,
+//    Each bucket holds one TT entry.  The best move from this position is found here,
 //    the evaluation or cutoff score, the depth-at-which it was searched.
 //------------------------------------------------------------------------------
 struct TTEntry {
@@ -152,14 +153,14 @@ struct TTEntry {
     int16_t     score;      // score from the search
     int8_t      depth;      // search depth at which score was computed
     Bound       flag;       // exact / lower / upper bound
-    uint8_t     age;        // for aging out old entries
+    //uint8_t     age;        // for aging out old entries
 };
 
 //------------------------------------------------------------------------------
-// 3) The table itself is just a power-of-two array of buckets.  We mask the
+//    The table itself is just a power-of-two array of buckets.  We mask the
 //    Zobrist key to pick an index.
 //------------------------------------------------------------------------------
-static constexpr size_t TT_SIZE = 1 << 24;        // ~16M entries, 512 mib or so, we can push 1<<27 (4 gigas) for test or locally play
+static constexpr size_t TT_SIZE = 1ULL << 24;        // (24)~16M entries, 512 mib or so, we can push 1<<27 (4 gigas) for test or locally play
 static constexpr size_t TT_MASK = TT_SIZE - 1;
 extern TTEntry   TT[TT_SIZE];
 
@@ -2523,7 +2524,7 @@ UndoPacked do_move(Move move)
     if (castle_right & Castle_Right::kc) position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_BK];
     if (castle_right & Castle_Right::qc) position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_BQ];
 
-    // 4) Decode move
+    // Decode move
     int         from_sq         = Encoder::move_get_from(move);
     int         to_sq           = Encoder::move_get_to(move);
     Piece_Type  moved_piece     = Encoder::move_get_moved_piece(move);
@@ -2750,6 +2751,11 @@ UndoPacked do_move(Move move)
     castle_right &= Tables::castling_table[from_sq];
     castle_right &= Tables::castling_table[to_sq];
 
+    if (castle_right & Castle_Right::KC) position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_WK];
+    if (castle_right & Castle_Right::QC) position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_WQ];
+    if (castle_right & Castle_Right::kc) position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_BK];
+    if (castle_right & Castle_Right::qc) position_hash ^= Tables::zobrist_aux[ZOB_CASTLE_BQ];
+
     // toggle side‐to‐move in hash
     turn = opp;
     position_hash ^= Tables::zobrist_aux[ZOB_SIDE_TO_MOVE];
@@ -2903,20 +2909,6 @@ void undo_move(Move move, UndoPacked undo)
 }
 
 
-static inline __attribute__((always_inline))
-void sort_moves_by_score(int depth)
-{
-    auto &ML = move_list[depth];
-    bool is_max = (turn == white);
-    std::sort(
-      ML.moves,
-      ML.moves + ML.count,
-      [=](Move a, Move b) {
-        return Encoder::move_get_score(a, depth, is_max)
-             > Encoder::move_get_score(b, depth, is_max);
-      }
-    );
-}
 
 }   // end Move_Gen namepsace
 }   // end RedStone namespace

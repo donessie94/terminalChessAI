@@ -1,4 +1,5 @@
 #include"encoder.h"
+#include"move_gen.h"
 
 namespace RedStone{
 

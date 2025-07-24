@@ -1,6 +1,7 @@
 #pragma once
 #include "../move/encoder.h"
 #include "../move/move_gen.h"
+#include "../move/tables.h"
 
 //
 
@@ -26,7 +27,7 @@ static inline void print_move_info(Move m) {
     Piece_Type cp  = Encoder::move_get_captured_piece(m);
     Piece_Type pp  = Encoder::move_get_promo_piece(m);
     uint32_t flags = Encoder::move_get_flags(m);
-    uint8_t score  = Encoder::move_get_score(m, 0, 1);
+    //uint8_t score  = Encoder::move_get_score(m, 0, 1);
 
     // algebraic from/to
     char from_file = 'a' + (from & 7);
@@ -41,7 +42,7 @@ static inline void print_move_info(Move m) {
 
     printf("Captured:  %s\n", piece_names[(int)cp]);
     printf("Promoted:  %s\n", piece_names[(int)pp]);
-    printf("Score:     %u\n", score);
+    //printf("Score:     %u\n", score);
 
     printf("Flags:     ");
     bool any = false;
