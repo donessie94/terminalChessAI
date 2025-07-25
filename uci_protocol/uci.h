@@ -13,8 +13,8 @@ constexpr const char* ENGINE_AUTHOR = "donessie";
 // Define the FEN start string:
 const char start_position[] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const char tricky_position[] = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
-const char test_position[] = "2rr2k1/p4ppp/8/5P2/Qn4n1/2P5/PP3qPP/R1BK1B1R w - - 0 1";
-const char test_position2[] = "2kr3r/1pp2Qp1/p4b1p/3B1p2/2Pn4/2qP4/P4PPP/4R1K1 b - - 0 1";
+const char test_position[] = "8/5R2/8/k5pn/7p/2K5/1Q3PPP/8 w - - 0 1";
+const char mate_position[] = "8/R7/8/7p/5k1B/1P6/6PP/3R2K1 w - - 0 1";
 
 // when recieves "uci" token
 inline void init_engine()
@@ -165,7 +165,7 @@ inline void on_go(const std::string& args)
     std::cout << "bestmove " << mv << "\n";
     Search::print_PV();
     std::cout << "evaluation " << Search::pos_eval << "\n";
-    std::cout << "nodes " << Search::node_count << "\n";
+    std::cout << "nodes " << Search::node_count_total << "\n";
     std::cout << "prunes " << Search::prune_count << "\n";
     printf("Search time: %lld ms\n", (long long)dt);
     printf("Nodes per milisecond: %llu", (Search::node_count / dt));
