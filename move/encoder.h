@@ -229,7 +229,7 @@ static inline __attribute__((always_inline)) bool move_is_check(Move m) {
     return move_get_check(m);
 }
 
-static constexpr uint8_t PROMOTION_BONUS = 100;
+static constexpr uint16_t PROMOTION_BONUS = 500;
 static constexpr uint16_t KILLER1_BONUS = 60;
 static constexpr uint16_t KILLER2_BONUS = 50;
 static constexpr uint8_t HISTORY_BONUS = 2;
