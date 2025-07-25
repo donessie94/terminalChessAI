@@ -15,6 +15,16 @@ static constexpr Bitboard WHITE_TERRITORY = 0x00000000FFFFFFFFULL;
 // used for custom max depth search
 unsigned search_depth;
 
+//
+static constexpr uint16_t attacker_score[] = {
+    /* Pawn   */ 1,
+    /* Knight */ 4,
+    /* Bishop */ 3,
+    /* Rook   */ 2,
+    /* Queen  */ 5,
+    /* King   */ 0
+};
+
 unsigned long long PV_HITS;
 // now takes depth and is_max‐node so it can look up the right killer array
 static inline __attribute__((always_inline)) uint16_t move_get_score(Move m, int depth, bool is_max)
@@ -28,12 +38,12 @@ static inline __attribute__((always_inline)) uint16_t move_get_score(Move m, int
 
     // PV‐move super‐bonus so we try the first "line of moves" we found are best from
     // our previous iteration of the search (iterative deepening)
-    int this_pv_len = Encoder::principal_variation_length[depth];
-    if (this_pv_len > 0
-    && m == Encoder::principal_variation_move[depth][0])
+    // PV‐move super‐bonus: only if we’re still within the root‐PV length
+    if(Encoder::principal_variation_move[0][depth] == m)
     {
         PV_HITS++;
-        Encoder::principal_variation_move[depth][0] = 0;
+        // clear out this slot so we only hit it once
+        Encoder::principal_variation_move[0][depth] = 0;
         return Encoder::PV_BONUS;
     }
 
@@ -109,15 +119,7 @@ static inline __attribute__((always_inline)) uint16_t move_get_score(Move m, int
     //     return score+2;//check_bon;
     // }
 
-
-    // if(attacker == Pawn) return 2;
-    // else if(attacker == Knight) return 3;
-    // else if(attacker == Bishop) return 4;
-    // else if(attacker == Rook) return 5;
-    // else if(attacker == Queen) return 6;
-    // else if(attacker == Queen) return 7;
-    //if(attacker == King) return 1;
-
+    // return attacker_score[attacker];
     return 0;
 }
 
@@ -328,7 +330,7 @@ struct ETEntry {
     uint64_t    key;            // full Zobrist key (64-bit)
     int         evaluation;     // evaluation
 };
-static constexpr size_t ET_SIZE = 1ULL << 26;
+static constexpr size_t ET_SIZE = 1ULL << 24;
 static constexpr size_t ET_MASK = ET_SIZE - 1;
 ETEntry   EvalTable[ET_SIZE];
 
@@ -1033,6 +1035,7 @@ static inline __attribute__((always_inline)) int alpha_beta_min(int alpha, int b
 static constexpr int DELTA = 1;
 unsigned long long re_search_count;
 unsigned long long probe_fail_high = 0, probe_fail_low = 0;
+constexpr int LMR_DEPTH = 2;   // shave off 2 plies
 
 static inline __attribute__((always_inline)) int pvs_max(int alpha, int beta, int depth)
 {
@@ -1052,7 +1055,7 @@ static inline __attribute__((always_inline)) int pvs_max(int alpha, int beta, in
     // Transposition Table=====================================================
     Move_Gen::TTEntry* TT = &Move_Gen::TT[Move_Gen::position_hash & Move_Gen::TT_MASK];
     int remaining_depth = search_depth - depth;
-    //bool better_depth = (remaining_depth >= TT->depth)?true:false;
+    //bool better_depth = (remaining_depth > TT->depth)?true:false;
     // bool better_depth = true;
     // I already know the exact value and PV from the table, so no need to clear PVs here on early out we want to keep these ones
     if(TT->key == Move_Gen::position_hash)
@@ -1094,57 +1097,53 @@ static inline __attribute__((always_inline)) int pvs_max(int alpha, int beta, in
         UndoPacked undo = Move_Gen::do_move(m);
 
         int score;
-        if (i == 0) {
+        if (i == 0)
+        {
             // first move = full window
             score = pvs_min(alpha, beta, depth + 1);
-        } else {
-            // null-window probe
-            score = pvs_min(alpha, alpha + DELTA, depth + 1);
+        }
+        else
+        {
+            // === LMR START: try a reduced-depth null-window search ============================================================================================
+            Move_Gen::generate_check_mask();
+            bool check_move = (Move_Gen::num_attackers > 0) ? true : false;
 
-            // fail-high: if probe ≥ beta, undo & cutoff immediately
-            if (score >= beta) {
-                probe_fail_high++;
-                Move_Gen::undo_move(m, undo);
+            bool is_tactical = Encoder::move_get_captured_piece(m) != Empty
+                             || Encoder::move_get_promo_piece(m)   != Empty    // checks? i may want to check for checks here too
+                             || m == Encoder::max_killer[0][depth]             // no need to check PV and TT cuz those are alwasy first or second
+                             || m == Encoder::max_killer[1][depth]
+                             || check_move;
 
-                // Killer Moves============================================================
-                if (Encoder::move_get_captured_piece(m) == Empty &&
-                    Encoder::move_get_promo_piece(m)     == Empty &&
-                    //!Encoder::move_is_check(m) &&
-                    m != Encoder::max_killer[0][depth])
+            // moves 0 - 4 dont get skipped (supposedly best moves), also we build a strong foundation PV by not ignoring low depths (only after depth>=4) (cuz d=2 but -2 must be > max depth)
+            if (!is_tactical && depth >= 2 && i >= 2 && depth + 1 + LMR_DEPTH < search_depth)  // (IMPORTANT) note the guard vs going past the max search depth
+            {
+                // reduced search at depth+1+LMR_DEPTH
+                score = pvs_min(alpha, alpha + DELTA, depth + 1 + LMR_DEPTH);   // NOTE the reduction by adding LMR_DEPTH, this search will not go as deep
+                // if that looks promising, re-search full depth
+                if (score > alpha && score < beta)
                 {
-                    Encoder::max_killer[1][depth] = Encoder::max_killer[0][depth];
-                    Encoder::max_killer[0][depth] = m;
+                    re_search_count++;
+                    score = pvs_min(alpha, beta, depth + 1);
                 }
-                // ========================================================================
+            }
+            else
+            {
+                // no reduction, normal null-window probe
+                score = pvs_min(alpha, alpha + DELTA, depth + 1);
 
-                // Transposition Table=====================================================
-                //if(better_depth)
-                {
-                    TT->key         = Move_Gen::position_hash;
-                    TT->bestMove    = m;
-                    TT->score       = score;
-                    TT->flag        = Bound::LOWER;
-                    TT->depth       = remaining_depth;
-                    // TT->age         += 1;
+                if (score > alpha && score < beta) {
+                    re_search_count++;
+                    score = pvs_min(alpha, beta, depth + 1);
                 }
-                // ========================================================================
-
-                Encoder::principal_variation_length[depth] = 0;
-                prune_count++;
-                return score;
             }
-
-            // re-search full if it might beat alpha
-            if (score > alpha) {
-                re_search_count++;
-                score = pvs_min(alpha, beta, depth + 1);
-            }
+            // === LMR END ============================================================================================================================
         }
 
         Move_Gen::undo_move(m, undo);
 
         // immediate β-cutoff
-        if (score >= beta) {
+        if (score >= beta)
+        {
             if (Encoder::move_get_captured_piece(m) == Empty &&
                 Encoder::move_get_promo_piece(m)     == Empty &&
                 //!Encoder::move_is_check(m) &&
@@ -1175,7 +1174,8 @@ static inline __attribute__((always_inline)) int pvs_max(int alpha, int beta, in
         {
             best = score;
             //localBestMove = m;
-            if (score > alpha) {
+            if (score > alpha)
+            {
                 alpha = score;
                 // update PV
                 Encoder::principal_variation_move[depth][0] = m;
@@ -1222,7 +1222,7 @@ static inline __attribute__((always_inline)) int pvs_min(int alpha, int beta, in
     // remaining depth cuz we evaluated this position when we had "X" remaining depth and
     // since evaluation is bottom up this translates to this evaluation is "X" level deep
     int remaining_depth = search_depth - depth;
-    //bool better_depth = (remaining_depth >= TT->depth)?true:false;
+    //bool better_depth = (remaining_depth > TT->depth)?true:false;
     // bool better_depth = true;
     if(TT->key == Move_Gen::position_hash)
     {
@@ -1256,56 +1256,52 @@ static inline __attribute__((always_inline)) int pvs_min(int alpha, int beta, in
     int orig_alpha = alpha, orig_beta = beta;
     //Move localBestMove = Move_Gen::move_list[depth].moves[0];
 
-    for (int i = 0; i < Move_Gen::move_list[depth].count; ++i) {
+    for (int i = 0; i < Move_Gen::move_list[depth].count; ++i)
+    {
         Move m = Move_Gen::move_list[depth].moves[i];
         UndoPacked undo = Move_Gen::do_move(m);
 
         int score;
-        if (i == 0) {
+        if (i == 0)
+        {
             // first move = full window
             score = pvs_max(alpha, beta, depth + 1);
-        } else {
-            // null-window probe
-            score = pvs_max(beta - DELTA, beta, depth + 1);
+        }
+        else
+        {
+            // === LMR START: try a reduced-depth null-window search ============================================================================================
+            Move_Gen::generate_check_mask();
+            bool check_move = (Move_Gen::num_attackers > 0) ? true : false;
 
-            // fail-low: if probe ≤ alpha, undo & cutoff immediately
-            if (score <= alpha) {
-                probe_fail_low++;
-                Move_Gen::undo_move(m, undo);
+            bool is_tactical = Encoder::move_get_captured_piece(m) != Empty
+                             || Encoder::move_get_promo_piece(m)    != Empty
+                             || m == Encoder::min_killer[1][depth]
+                             || m == Encoder::min_killer[0][depth]
+                             || check_move;
 
-                // Killer Moves============================================================
-                if (Encoder::move_get_captured_piece(m) == Empty &&
-                    Encoder::move_get_promo_piece(m)     == Empty &&
-                    //!Encoder::move_is_check(m) &&
-                    m != Encoder::min_killer[0][depth])
+            if (!is_tactical && depth >= 2 && i >= 2 && depth + 1 + LMR_DEPTH < search_depth)
+            {
+                // reduced search at a shallower depth
+                score = pvs_max(beta - DELTA, beta, depth + 1 + LMR_DEPTH);
+                // if that reduced probe fails low (i.e. < beta), fall back to full‐window
+                if (score > alpha && score < beta)
                 {
-                    Encoder::min_killer[1][depth] = Encoder::min_killer[0][depth];
-                    Encoder::min_killer[0][depth] = m;
+                    re_search_count++;
+                    score = pvs_max(alpha, beta, depth + 1);
                 }
-                // ========================================================================
+            }
+            else
+            {
+                // no reduction, normal null-window probe
+                score = pvs_max(beta - DELTA, beta, depth + 1);
 
-                // Transposition Table=====================================================
-                //if(better_depth)
+                if (score > alpha && score < beta)
                 {
-                    TT->key         = Move_Gen::position_hash;
-                    TT->bestMove    = m;
-                    TT->score       = score;
-                    TT->flag        = Bound::UPPER;
-                    TT->depth       = remaining_depth;
-                    // TT->age         += 1;
+                    re_search_count++;
+                    score = pvs_max(alpha, beta, depth + 1);
                 }
-                // ========================================================================
-
-                Encoder::principal_variation_length[depth] = 0;
-                prune_count++;
-                return score;
             }
-
-            // re-search full if it might beat beta
-            if (score < beta) {
-                re_search_count++;
-                score = pvs_max(alpha, beta, depth + 1);
-            }
+            // === LMR END ============================================================================================================================
         }
 
         Move_Gen::undo_move(m, undo);
@@ -1333,6 +1329,7 @@ static inline __attribute__((always_inline)) int pvs_min(int alpha, int beta, in
             // ========================================================================
 
             Encoder::principal_variation_length[depth] = 0;
+
             prune_count++;
             return score;
         }
@@ -1453,11 +1450,15 @@ Move find_best_move_white(int max_depth)
     }
 
     // Transposition Table=====================================================
-    TT->key                                 = Move_Gen::position_hash;
-    TT->bestMove                            = best_move;
-    TT->score                               = alpha;
-    TT->flag                                = Bound::EXACT;
-    TT->depth                               = search_depth;
+    //bool better_depth = (search_depth >= TT->depth)?true:false;
+    //if(better_depth)
+    {
+        TT->key                                 = Move_Gen::position_hash;
+        TT->bestMove                            = best_move;
+        TT->score                               = alpha;
+        TT->flag                                = Bound::EXACT;
+        TT->depth                               = search_depth;
+    }
     // ========================================================================
 
     pos_eval = current_node_best;
@@ -1528,11 +1529,15 @@ Move find_best_move_black(int max_depth)
         Move_Gen::undo_move(m, undo_info);
     }
     // Transposition Table=====================================================
-    TT->key                                 = Move_Gen::position_hash;
-    TT->bestMove                            = best_move;
-    TT->score                               = beta;
-    TT->flag                                = Bound::EXACT;
-    TT->depth                               = search_depth;
+    //bool better_depth = (search_depth >= TT->depth)?true:false;
+    //if(better_depth)
+    {
+        TT->key                                 = Move_Gen::position_hash;
+        TT->bestMove                            = best_move;
+        TT->score                               = beta;
+        TT->flag                                = Bound::EXACT;
+        TT->depth                               = search_depth;
+    }
     // ========================================================================
     pos_eval = current_node_best;
     return best_move;

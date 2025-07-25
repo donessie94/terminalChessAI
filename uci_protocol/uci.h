@@ -139,7 +139,7 @@ inline void on_go(const std::string& args)
 {
     using namespace std::chrono;
 
-    int depth = 8;
+    int depth = 10;
     auto t0 = steady_clock::now();
     //Move best = (Move_Gen::turn == white) ? Search::find_best_move_white(depth) : Search::find_best_move_black(depth) ;
     Move best = (Move_Gen::turn == white) ? Search::iterative_deepen(true, depth) : Search::iterative_deepen(false, depth) ;

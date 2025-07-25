@@ -160,7 +160,7 @@ struct TTEntry {
 //    The table itself is just a power-of-two array of buckets.  We mask the
 //    Zobrist key to pick an index.
 //------------------------------------------------------------------------------
-static constexpr size_t TT_SIZE = 1ULL << 25;        // (24)~16M entries, 512 mib or so, we can push 1<<27 (4 gigas) for test or locally play
+static constexpr size_t TT_SIZE = 1ULL << 24;        // (24)~16M entries, 512 mib or so, we can push 1<<27 (4 gigas) for test or locally play
 static constexpr size_t TT_MASK = TT_SIZE - 1;
 extern TTEntry   TT[TT_SIZE];
 
