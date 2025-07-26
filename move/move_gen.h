@@ -2910,5 +2910,63 @@ void undo_move(Move move, UndoPacked undo)
 
 
 
+
+//-----------------------------------------------------------------------------
+// A little helper to hold exactly the fields we clobber when we null‐move.
+//-----------------------------------------------------------------------------
+struct NullUndo {
+  int           old_ep;
+  int           old_castle;
+  uint64_t      old_hash;
+  bool          old_turn;
+};
+
+//-----------------------------------------------------------------------------
+// do_null_move()
+//    — applies a “pass” (flip side, clear EP, update Zobrist), and
+//      returns a NullUndo you must pass to undo_null_move()
+//-----------------------------------------------------------------------------
+static inline __attribute__((always_inline))
+NullUndo do_null_move()
+{
+    // snapshot
+    NullUndo nu {
+        .old_ep      = en_passant,
+        .old_castle  = castle_right,
+        .old_hash    = position_hash,
+        .old_turn    = turn
+    };
+
+    // remove old EP from hash if any
+    if (nu.old_ep != no_sqr)
+    {
+        int f = nu.old_ep & 7;  // extract file 0=a … 7=h
+        Move_Gen::position_hash ^= Tables::zobrist_aux[ZOB_EP_FILE_A + f];
+    }
+    Move_Gen::en_passant = no_sqr;
+
+    // flip side‐to‐move in both state + hash
+    Move_Gen::turn = !nu.old_turn;
+    Move_Gen::position_hash ^= Tables::zobrist_aux[ZOB_SIDE_TO_MOVE];
+
+    return nu;
+}
+
+//-----------------------------------------------------------------------------
+// undo_null_move()
+//    — restores everything do_null_move clobbered
+//-----------------------------------------------------------------------------
+static inline __attribute__((always_inline))
+void undo_null_move(const NullUndo &nu)
+{
+    turn         = nu.old_turn;
+    en_passant   = nu.old_ep;
+    castle_right = nu.old_castle;
+    position_hash= nu.old_hash;
+}
+
+
+
+
 }   // end Move_Gen namepsace
 }   // end RedStone namespace

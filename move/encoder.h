@@ -270,7 +270,11 @@ extern Move min_killer[2][64];
 // .                                                |
 // Max_Depth+1                                      |
 // ==================================================
-extern Move principal_variation_move[65][65];
+struct PVEntry {
+    uint64_t hash;  // Zobrist key of the position
+    Move     move;  // the “best move” we found here
+};
+extern PVEntry principal_variation_move[65][65];
 extern Move principal_variation_length[65];
 
 // ============================================================================================================================

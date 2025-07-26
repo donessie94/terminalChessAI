@@ -54,7 +54,7 @@ Move max_killer[2][64];
 Move min_killer[2][64];
 uint8_t max_history_move_score[64][64];
 uint8_t min_history_move_score[64][64];
-Move principal_variation_move[65][65];
+PVEntry principal_variation_move[65][65];
 Move principal_variation_length[65];
 
 } // end Encoder namespace

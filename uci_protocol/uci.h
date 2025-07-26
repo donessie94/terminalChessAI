@@ -139,7 +139,10 @@ inline void on_go(const std::string& args)
 {
     using namespace std::chrono;
 
-    int depth = 10;
+    // well tbh 11 is 10 depth, the reason is once we get to the detph we do quisience wich only
+    // allows captures or promos (and check on first move) but its not a complete move so its not part of the depth
+    int depth = 9;
+
     auto t0 = steady_clock::now();
     //Move best = (Move_Gen::turn == white) ? Search::find_best_move_white(depth) : Search::find_best_move_black(depth) ;
     Move best = (Move_Gen::turn == white) ? Search::iterative_deepen(true, depth) : Search::iterative_deepen(false, depth) ;
