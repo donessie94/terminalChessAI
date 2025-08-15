@@ -11,7 +11,7 @@ A terminal-based chess game written in C++, featuring an AI opponent powered by 
 > - **Iterative deepening** + **aspiration windows**
 > - **LMR** (late-move reductions), **null-move pruning**
 > - Same **ncurses/Unicode** terminal UI
-> - WAY STRONGER ENGINE 2000k+ elo
+> - WAY STRONGER ENGINE 2000+ elo
 
 <p align="center">
   <img width="730" alt="terminalChessAI in action" src="https://github.com/user-attachments/assets/6ffbdb46-3896-467d-b6ec-8583e1396045" />
