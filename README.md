@@ -2,6 +2,17 @@
 
 A terminal-based chess game written in C++, featuring an AI opponent powered by minimax search with alpha-beta pruning and an NCurses-based ASCII board display.
 
+> ## 🔥 Update — RedStone branch
+> The actively developed engine is on the RedStone branch.  
+> It upgrades this project with:
+> - **Bitboard** move generation
+> - **Negamax α–β** (with PVS), **quiescence search**
+> - **Transposition table** (Zobrist hashing)
+> - **Iterative deepening** + **aspiration windows**
+> - **LMR** (late-move reductions), **null-move pruning**
+> - Same **ncurses/Unicode** terminal UI
+> - WAY STRONGER ENGINE 2000k+ elo
+
 <p align="center">
   <img width="730" alt="terminalChessAI in action" src="https://github.com/user-attachments/assets/6ffbdb46-3896-467d-b6ec-8583e1396045" />
 </p>
